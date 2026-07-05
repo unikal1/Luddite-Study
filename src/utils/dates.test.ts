@@ -1,4 +1,4 @@
-import { todayIso } from './dates';
+import { formatDate, todayIso } from './dates';
 
 describe('todayIso', () => {
   it('uses the configured timezone instead of the viewer local date', () => {
@@ -9,3 +9,19 @@ describe('todayIso', () => {
   });
 });
 
+describe('formatDate', () => {
+  it('renders study dates in Korea time even when the process timezone is UTC', () => {
+    const originalTimezone = process.env.TZ;
+    process.env.TZ = 'UTC';
+
+    try {
+      expect(formatDate('2026-06-29')).toMatch(/2026년 6월 29일/);
+    } finally {
+      if (originalTimezone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTimezone;
+      }
+    }
+  });
+});
