@@ -556,29 +556,6 @@ function RepositoryWritePanel({
         />
       </label>
 
-      <details className="auth-help">
-        <summary>
-          <Terminal size={16} aria-hidden="true" />
-          gh CLI로 준비
-        </summary>
-        <p>로컬이나 Codespaces에서 로그인한 뒤 출력값을 이 입력칸에 붙여 넣습니다.</p>
-        <pre tabIndex={0}><code>{'gh auth login --hostname github.com --scopes repo\ngh auth token'}</code></pre>
-      </details>
-
-      <div className="repository-write-controls">
-        <label className="check-row repository-check">
-          <input
-            checked={rememberCredential}
-            onChange={(event) => onRememberCredentialChange(event.target.checked)}
-            type="checkbox"
-          />
-          <span>이 탭에만 보관</span>
-        </label>
-        <button className="text-button" type="button" onClick={onClearCredential}>
-          인증값 지우기
-        </button>
-      </div>
-
       {action === 'delete' ? (
         <label className="check-row repository-check repository-check--danger">
           <input
@@ -594,6 +571,29 @@ function RepositoryWritePanel({
         {action === 'delete' ? <Trash2 size={18} aria-hidden="true" /> : <Save size={18} aria-hidden="true" />}
         {isPending ? '반영 중' : buttonLabel}
       </button>
+
+      <div className="repository-write-controls">
+        <label className="check-row repository-check">
+          <input
+            checked={rememberCredential}
+            onChange={(event) => onRememberCredentialChange(event.target.checked)}
+            type="checkbox"
+          />
+          <span>이 탭에만 보관</span>
+        </label>
+        <button className="text-button" type="button" onClick={onClearCredential}>
+          인증값 지우기
+        </button>
+      </div>
+
+      <details className="auth-help">
+        <summary>
+          <Terminal size={16} aria-hidden="true" />
+          gh CLI로 준비
+        </summary>
+        <p>로컬이나 Codespaces에서 로그인한 뒤 출력값을 이 입력칸에 붙여 넣습니다.</p>
+        <pre tabIndex={0}><code>{'gh auth login --hostname github.com --scopes repo\ngh auth token'}</code></pre>
+      </details>
 
       {status.kind !== 'idle' ? (
         <p className={`repository-write-status repository-write-status--${status.kind}`}>
