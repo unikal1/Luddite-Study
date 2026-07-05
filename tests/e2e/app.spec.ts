@@ -28,6 +28,8 @@ test('dashboard, material reader, composer, and tools work on desktop', async ({
   await page.getByRole('textbox', { name: 'Markdown' }).fill('# 검증\n\n- [x] 대시보드 확인\n- [ ] 모바일 확인');
   await expect(page.getByText('자료/alice/browser-check.md')).toBeVisible();
   await expect(page.getByRole('heading', { name: '검증' })).toBeVisible();
+  await page.getByText('gh CLI로 준비').click();
+  await expect(page.getByText('gh auth login --hostname github.com --scopes repo')).toBeVisible();
 
   const repositoryRequests: string[] = [];
   const corsHeaders = {

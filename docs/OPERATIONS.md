@@ -122,6 +122,24 @@ JSON/Markdown 원문은 기본으로 접혀 있으며 `초안 보기`를 열어 
 
 직접 저장 성공 후에는 `main` 브랜치에 커밋이 생기고 GitHub Pages workflow가 다시 실행된다. 배포 화면 반영까지는 보통 1-2분 정도 걸린다.
 
+### GitHub 쓰기 인증값 준비
+
+권장 순서는 다음과 같다.
+
+1. 저장소에 collaborator로 초대된 GitHub 계정으로 로그인한다.
+2. 가능하면 GitHub fine-grained credential을 만들고 이 저장소 하나에만 `Contents: Read and write` 권한을 준다.
+3. 또는 로컬/Codespaces에서 GitHub CLI를 사용한다.
+
+```bash
+gh auth login --hostname github.com --scopes repo
+gh auth token
+```
+
+4. 출력값을 작성 화면의 `GitHub 쓰기 인증값`에 붙여 넣는다.
+5. 공용 PC에서는 `이 탭에만 보관`을 켜지 않거나, 작업 후 `인증값 지우기`를 누른다.
+
+브라우저는 로컬 `gh` 명령을 직접 실행할 수 없다. `gh`는 사용자가 터미널에서 인증값을 준비하는 도구로만 쓴다.
+
 ### 새 문서 추가
 
 1. 작성 화면에서 `새 문서`를 고른다.
@@ -158,6 +176,14 @@ JSON/Markdown 원문은 기본으로 접혀 있으며 `초안 보기`를 열어 
 7. push 후 배포 화면에서 문서가 사라졌는지 확인한다.
 
 직접 삭제는 Markdown 파일만 삭제한다. 회차 `resources` 참조 정리는 운영자가 별도로 확인한다.
+
+## OAuth 로그인 버튼 검토 상태
+
+GitHub Pages만으로 “GitHub로 로그인” 버튼을 만들려면 보안 경계를 더 정해야 한다.
+
+- 일반 OAuth web flow는 client secret을 숨길 서버가 필요하므로 현재 구조에 넣지 않는다.
+- GitHub App/OAuth App Device Flow는 서버 없이 가능할 수 있지만, 별도 앱 등록과 권한 검토가 필요하다.
+- 현재 구현은 `gh` 또는 fine-grained credential을 사용자가 직접 준비하고, 브라우저 세션에만 입력하는 방식이다.
 
 ## 이미지 추가
 

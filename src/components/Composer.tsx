@@ -1,4 +1,4 @@
-import { Check, Clipboard, Code2, Edit3, ExternalLink, FileImage, FilePlus2, KeyRound, ListChecks, RotateCcw, Save, Table2, Trash2 } from 'lucide-react';
+import { Check, Clipboard, Code2, Edit3, ExternalLink, FileImage, FilePlus2, KeyRound, ListChecks, RotateCcw, Save, Table2, Terminal, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { allDocs } from '../content';
 import { activeUsers, sessions } from '../data';
@@ -555,6 +555,15 @@ function RepositoryWritePanel({
           spellCheck={false}
         />
       </label>
+
+      <details className="auth-help">
+        <summary>
+          <Terminal size={16} aria-hidden="true" />
+          gh CLI로 준비
+        </summary>
+        <p>로컬이나 Codespaces에서 로그인한 뒤 출력값을 이 입력칸에 붙여 넣습니다.</p>
+        <pre tabIndex={0}><code>{'gh auth login --hostname github.com --scopes repo\ngh auth token'}</code></pre>
+      </details>
 
       <div className="repository-write-controls">
         <label className="check-row repository-check">

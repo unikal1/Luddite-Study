@@ -94,6 +94,26 @@ VITE_GITHUB_BRANCH=main
 
 수정 모드는 기존 파일 경로를 유지하므로 문서 종류, 사용자, 회차, 파일명 필드는 잠근다. 파일 이동이 필요하면 GitHub에서 파일 경로를 직접 바꾼다.
 
+### gh CLI 인증 준비
+
+브라우저는 로컬 `gh` 프로세스를 직접 실행할 수 없다. 대신 사용자가 로컬 또는 Codespaces 터미널에서 GitHub CLI로 로그인하고, 그 세션에서 나온 인증값을 작성 화면에 붙여 넣는다.
+
+```bash
+gh auth login --hostname github.com --scopes repo
+gh auth token
+```
+
+이 방식은 앱이 OAuth 비밀값을 갖지 않고도 사용자의 GitHub 권한으로 Contents API를 호출할 수 있게 한다. 단, 출력값은 사용자의 권한을 대표하므로 채팅, 문서, 커밋에 남기지 않는다.
+
+### OAuth/GitHub App 검토
+
+GitHub 로그인 버튼을 Pages 안에 직접 넣는 방식은 아직 기본 구현으로 채택하지 않는다.
+
+- OAuth App web application flow는 client secret으로 사용자 access token을 발급한다. GitHub 공식 문서도 web application이 secret 값을 노출하면 안 된다고 안내한다.
+- GitHub App installation token은 private key로 발급하므로 Pages-only 앱 안에 넣을 수 없다.
+- GitHub App 또는 OAuth App Device Flow는 client secret 없이 가능하지만, 앱 등록과 device flow 활성화가 필요하고 브라우저가 최종 access token을 직접 보관하게 된다. 이 저장소에서는 추후 별도 결정으로만 추가한다.
+- PKCE 기반 public client 방식은 가능성을 검토할 수 있지만, 앱 등록/권한 범위/토큰 보관 정책을 먼저 확정해야 한다.
+
 ## Markdown 이미지
 
 Markdown 본문에서 동반 이미지는 `public/assets/` 아래에 둔 뒤 `/assets/...` 절대 경로로 참조한다. 문서 옆 상대 경로 이미지(`./diagram.png`)는 Vite raw Markdown import만으로는 배포 산출물에 자동 포함되지 않으므로 빌드 검증에서 실패시킨다.
