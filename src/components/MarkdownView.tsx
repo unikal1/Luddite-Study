@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { attachmentPathFromSrc, isSupabaseAttachment, storageBucketId, supabase } from '../lib/supabase';
 
 type MarkdownViewProps = {
   content: string;
@@ -28,7 +30,7 @@ export function MarkdownView({ content }: MarkdownViewProps) {
               aria-label={props.type === 'checkbox' ? '체크리스트 항목' : props['aria-label']}
             />
           ),
-          img: ({ alt, src }) => <img alt={alt ?? ''} src={normalizeContentUrl(src)} loading="lazy" />
+          img: ({ alt, src }) => <MarkdownImage alt={alt ?? ''} src={src ?? ''} />
         }}
       >
         {content}
@@ -37,12 +39,53 @@ export function MarkdownView({ content }: MarkdownViewProps) {
   );
 }
 
+function MarkdownImage({ alt, src }: { alt: string; src: string }) {
+  const [resolvedSrc, setResolvedSrc] = useState(() => normalizeContentUrl(src));
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolve() {
+      if (!isSupabaseAttachment(src)) {
+        setResolvedSrc(normalizeContentUrl(src));
+        return;
+      }
+
+      const objectPath = attachmentPathFromSrc(src);
+      const { data, error } = await supabase.storage.from(storageBucketId).createSignedUrl(objectPath, 60 * 60);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (error || !data?.signedUrl) {
+        setFailed(true);
+        return;
+      }
+
+      setResolvedSrc(data.signedUrl);
+    }
+
+    void resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  if (failed) {
+    return <span className="image-fallback">{alt || '이미지를 불러올 수 없습니다.'}</span>;
+  }
+
+  return <img alt={alt} src={resolvedSrc} loading="lazy" />;
+}
+
 function normalizeContentUrl(url?: string): string | undefined {
   if (!url) {
     return url;
   }
 
-  if (/^(https?:|mailto:|tel:|data:|#)/.test(url)) {
+  if (isSupabaseAttachment(url) || /^(https?:|mailto:|tel:|data:|blob:|#)/.test(url)) {
     return url;
   }
 

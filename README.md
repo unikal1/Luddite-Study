@@ -1,6 +1,6 @@
 # Luddite Study
 
-GitHub Pages만으로 배포되는 스터디 운영 도구입니다. 자료와 발표 문서는 저장소의 Markdown 파일로 관리하고, 일정/사용자/벌칙/진도 같은 운영 데이터는 JSON 파일로 관리합니다.
+GitHub Pages에 정적 React 앱만 배포하고, 모든 영속 데이터는 Supabase를 SSOT로 사용하는 스터디 운영 도구입니다.
 
 ## 빠른 시작
 
@@ -17,21 +17,35 @@ npm run typecheck
 npm run test
 npm run build
 npm run e2e
-npm run check
 ```
 
-`npm run e2e`는 주요 흐름과 axe 접근성 스모크 테스트를 함께 실행합니다.
+## 데이터 저장 위치
 
-## 콘텐츠 위치
+- 사용자/멤버, 회차, 발표일, 자료/발표 Markdown, 진도, 벌칙, 활동 로그: Supabase Postgres
+- 이미지/첨부: Supabase Storage `study-attachments` 버킷
+- 인증: Supabase Auth, GitHub OAuth 또는 이메일/비밀번호
+- 저장소: 앱 코드, 문서, Supabase migration/config만 보관
 
-- 개인 자료: `자료/<사용자 id>/...md`
-- 공유 자료: `자료/공유/...md`
-- 발표 자료: `발표/<회차>/<사용자 id>/...md`
-- 사용자/회차/벌칙/진도 데이터: `data/*.json`
-- 이미지: `public/assets/`에 두고 Markdown에서 `/assets/...`로 참조
+자료와 발표 탭에서 폴더와 Markdown 문서를 직접 만들고 수정합니다. 발표 탭은 회차를 먼저 선택한 뒤 사람별 트리를 보여줍니다.
 
-작성 화면은 새 문서 초안, 기존 문서 수정, 삭제 준비, 추천 저장 경로, Markdown 미리보기를 제공합니다. 초대되어 쓰기 권한이 있는 사용자는 GitHub 쓰기 인증값을 입력해 저장소 파일을 직접 생성/수정/삭제할 수 있고, 인증을 쓰지 않는 경우에는 복사 버튼과 GitHub 생성/수정 링크로 반영합니다.
+## 환경 변수
 
-## 배포 설정
+`.env.example`을 기준으로 로컬 `.env.local`을 만들 수 있습니다.
 
-기본 설정은 `unikal1/Luddite-Study`와 `/Luddite-Study/` Pages 경로에 맞춰져 있습니다. fork나 저장소명 변경 시 `.env.example`의 값을 기준으로 `VITE_BASE_PATH`, `VITE_GITHUB_REPOSITORY`, `VITE_GITHUB_BRANCH`를 조정합니다.
+```bash
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+```
+
+publishable key만 프론트엔드에 둘 수 있습니다. service role key, DB password, OAuth client secret은 코드/문서/로그에 남기지 않습니다.
+
+## Supabase
+
+마이그레이션은 `supabase/migrations`에 있습니다. 적용된 주요 리소스:
+
+- 테이블: `profiles`, `study_members`, `study_sessions`, `document_folders`, `documents`, `document_versions`, `progress_topics`, `penalties`, `activity_events`, `attachments`
+- Storage bucket: `study-attachments`
+- RLS: 활성 `study_members`만 읽기/쓰기, 운영 권한은 `owner/admin/facilitator`
+- 첫 운영자 부트스트랩: Auth 사용자와 연결된 운영자가 없을 때 첫 로그인 사용자가 운영자로 등록
+
+자세한 내용은 `docs/ARCHITECTURE.md`, `docs/DATA_MODEL.md`, `docs/OPERATIONS.md`를 봅니다.

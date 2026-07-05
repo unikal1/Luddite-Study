@@ -1,229 +1,60 @@
-# 운영 가이드
+# Operations
 
-## 로컬 실행
+## First Owner
 
-```powershell
-npm install
-npm run dev
-```
+새 Supabase 프로젝트에는 Auth 사용자와 연결된 운영자가 없다.
 
-검증:
+1. 앱에서 GitHub OAuth 또는 이메일/비밀번호로 로그인한다.
+2. 첫 운영자 등록 화면에서 현재 계정을 운영자로 연결한다.
+3. 이후 RLS는 일반 운영 모드로 전환된다.
 
-```powershell
-npm run lint
-npm run typecheck
-npm run test
-npm run build
-npm run e2e
-npm run check
-```
+## Login
 
-## 사용자 추가
+지원 방식:
 
-1. `data/users.json`에 사용자를 추가한다.
-2. `id`는 자료/발표 경로와 동일하게 쓴다.
-3. 개인 자료 디렉토리 `자료/<id>/`를 만든다.
-4. 발표 자료는 `발표/<회차>/<id>/` 아래에 둔다.
+- GitHub OAuth
+- 이메일/비밀번호
+- 비밀번호 재설정 메일
 
-예:
+GitHub OAuth를 실제로 쓰려면 Supabase Dashboard의 Auth Providers에서 GitHub provider를 켜고 GitHub OAuth App의 Client ID/Secret을 등록한다. OAuth client secret은 저장소에 두지 않는다.
 
-```json
-{
-  "id": "dana",
-  "name": "Dana",
-  "github": "dana-study",
-  "role": "스터디원",
-  "active": true,
-  "color": "#2563eb",
-  "materialPath": "자료/dana",
-  "presentationPath": "발표/*/dana"
-}
-```
+## Participants
 
-## 개인 자료 추가
+운영 권한(`owner/admin/facilitator`) 사용자는 운영 탭에서 참여자를 추가한다.
 
-위치:
+- `member_uid`: 문서 경로에 쓰이는 안정 ID
+- `invite_email`: 이메일/비밀번호 가입 시 자동 연결 기준
+- `github_username`: GitHub OAuth 사용자 식별 보조 정보
+- `role`: `owner`, `admin`, `facilitator`, `member`
 
-```text
-자료/<사용자 id>/...md
-```
+초대 이메일과 같은 이메일로 가입한 Auth 사용자는 DB trigger에 의해 해당 `study_members` row에 연결된다.
 
-예:
+## Sessions
 
-```markdown
----
-title: React 메모
-owner: alice
-createdAt: 2026-07-05
-updatedAt: 2026-07-05
-tags:
-  - react
-summary: React 상태 업데이트 흐름을 정리한다.
----
+운영 탭에서 회차를 수정한다.
 
-# React 메모
+- 시작일/종료일: 회차 범위
+- 발표일: 발표가 진행되는 날짜
+- 발표자: 당일 추첨 후 저장
+- 회차 종료: 현재 회차를 `done`으로 변경
+- 새 회차 시작: 기존 current를 종료하고 새 current 회차를 생성
 
-본문을 Markdown으로 작성한다.
-```
+## Documents
 
-## 공유 자료 추가
+자료와 발표 탭에서 작성한다.
 
-위치:
+- 자료: 회차 없이 사람/공유 기준으로 저장
+- 발표: 선택한 회차 안에서 사람 기준으로 저장
+- 폴더: `document_folders.path`로 저장하며 깊이 제한 없음
+- 이미지: Markdown 입력칸에 드래그앤드롭하면 Storage에 업로드
 
-```text
-자료/공유/...md
-```
+## Deployment
 
-frontmatter의 `owner`는 `shared`를 쓴다.
+GitHub Pages workflow는 정적 앱만 빌드한다. Supabase secret은 필요 없다.
 
-## 발표 자료 추가
+필수 프론트 설정:
 
-위치:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-```text
-발표/<회차>/<사용자 id>/...md
-```
-
-예:
-
-```markdown
----
-title: TypeScript 발표
-owner: bob
-session: 2
-createdAt: 2026-07-05
-updatedAt: 2026-07-05
-tags:
-  - typescript
-summary: 운영 데이터 모델을 TypeScript로 설명한다.
----
-
-# TypeScript 발표
-```
-
-## 일정/목표/진도/벌칙 수정
-
-- 회차, 일정, 목표, 발표자: `data/sessions.json`
-- 주제별 진도: `data/progress.json`
-- 벌칙 현황: `data/penalties.json`
-
-웹의 운영 도구 화면에서 다음 일정, 진도, 벌칙 JSON 초안을 만들 수 있다. 초안을 복사해 해당 JSON 파일에 반영하고 push한다.
-각 초안에는 반영 위치와 GitHub 열기 링크가 함께 표시된다.
-JSON/Markdown 원문은 기본으로 접혀 있으며 `초안 보기`를 열어 확인한다.
-변경 초안은 `일정`, `진도`, `벌칙`, `회의록` 중 하나를 선택해서 본다.
-자료/발표 탐색 화면의 경로 복사 버튼을 사용하면 회차 `resources`에 넣을 Markdown 경로를 그대로 복사할 수 있다.
-
-## 작성 화면 사용
-
-작성 화면은 두 가지 저장 방식을 지원한다.
-
-- 직접 저장: GitHub 저장소에 초대되어 쓰기 권한이 있는 사용자가 GitHub 쓰기 인증값을 입력해 `자료/` 또는 `발표/` 파일을 바로 생성, 수정, 삭제한다.
-- 링크/복사 저장: 인증값을 입력하지 않고 Markdown을 복사한 뒤 GitHub 새 파일/편집 화면이나 github.dev에서 반영한다.
-
-직접 저장 성공 후에는 `main` 브랜치에 커밋이 생기고 GitHub Pages workflow가 다시 실행된다. 배포 화면 반영까지는 보통 1-2분 정도 걸린다.
-
-### GitHub 쓰기 인증값 준비
-
-권장 순서는 다음과 같다.
-
-1. 저장소에 collaborator로 초대된 GitHub 계정으로 로그인한다.
-2. 가능하면 GitHub fine-grained credential을 만들고 이 저장소 하나에만 `Contents: Read and write` 권한을 준다.
-3. 또는 로컬/Codespaces에서 GitHub CLI를 사용한다.
-
-```bash
-gh auth login --hostname github.com --scopes repo
-gh auth token
-```
-
-4. 출력값을 작성 화면의 `GitHub 쓰기 인증값`에 붙여 넣는다.
-5. 공용 PC에서는 `이 탭에만 보관`을 켜지 않거나, 작업 후 `인증값 지우기`를 누른다.
-
-브라우저는 로컬 `gh` 명령을 직접 실행할 수 없다. `gh`는 사용자가 터미널에서 인증값을 준비하는 도구로만 쓴다.
-
-### 새 문서 추가
-
-1. 작성 화면에서 `새 문서`를 고른다.
-2. 개인 자료, 공유 자료, 발표 자료 중 하나를 고른다.
-3. 제목, 요약, 태그, 본문을 입력한다.
-4. 필요하면 빠른 삽입 버튼으로 체크리스트, 표, 코드블록, 이미지 문법을 넣는다.
-5. 추천 저장 경로와 미리보기를 확인한다.
-6. 직접 저장을 쓰려면 `GitHub 쓰기 인증값`을 입력하고 `저장소에 저장`을 누른다.
-7. 직접 저장을 쓰지 않으면 `Markdown 복사`로 본문을 복사한다.
-8. `GitHub에 만들기`로 추천 경로의 새 파일 화면을 연다.
-9. 복사한 Markdown을 붙여 넣고 push한다.
-
-새 문서 초안은 브라우저 localStorage에 자동 저장된다. 저장소에 올라가는 데이터는 아니며, 같은 브라우저에서만 복구된다. 필요하면 `초안 초기화`로 지울 수 있다.
-
-### 기존 문서 수정
-
-1. 작성 화면에서 `수정`을 고른다.
-2. `기존 문서` 목록에서 수정할 Markdown 파일을 선택한다.
-3. frontmatter와 본문이 폼에 채워지면 제목, 요약, 태그, 본문을 고친다.
-4. 직접 저장을 쓰려면 `GitHub 쓰기 인증값`을 입력하고 `수정 반영`을 누른다.
-5. 직접 저장을 쓰지 않으면 `Markdown 복사`로 전체 Markdown을 복사한다.
-6. `GitHub에서 열기`로 기존 파일을 열고 내용을 교체한 뒤 push한다.
-
-수정 모드는 기존 파일 경로를 유지한다. 문서 종류, 사용자, 회차, 폴더, 파일명은 화면에서 잠겨 있다. 경로 이동이 필요하면 GitHub에서 파일을 옮기고 frontmatter도 함께 맞춘다.
-
-### 문서 삭제 준비
-
-1. 작성 화면에서 `삭제 준비`를 고른다.
-2. `기존 문서` 목록에서 삭제할 파일을 선택한다.
-3. 직접 삭제를 쓰려면 확인 체크를 켠 뒤 `저장소에서 삭제`를 누른다.
-4. 직접 삭제를 쓰지 않으면 삭제 체크리스트를 복사한다.
-5. GitHub에서 해당 파일을 삭제한다.
-6. `data/sessions.json`의 `resources`처럼 삭제 문서를 참조하는 항목이 있으면 같이 정리한다.
-7. push 후 배포 화면에서 문서가 사라졌는지 확인한다.
-
-직접 삭제는 Markdown 파일만 삭제한다. 회차 `resources` 참조 정리는 운영자가 별도로 확인한다.
-
-## OAuth 로그인 버튼 검토 상태
-
-GitHub Pages만으로 “GitHub로 로그인” 버튼을 만들려면 보안 경계를 더 정해야 한다.
-
-- 일반 OAuth web flow는 client secret을 숨길 서버가 필요하므로 현재 구조에 넣지 않는다.
-- GitHub App/OAuth App Device Flow는 서버 없이 가능할 수 있지만, 별도 앱 등록과 권한 검토가 필요하다.
-- 현재 구현은 `gh` 또는 fine-grained credential을 사용자가 직접 준비하고, 브라우저 세션에만 입력하는 방식이다.
-
-## 이미지 추가
-
-1. 이미지 파일을 `public/assets/` 아래에 추가한다.
-2. Markdown에서는 `/assets/<파일명>`으로 참조한다.
-3. `./image.png`처럼 문서 옆 상대 경로를 쓰지 않는다. 배포 산출물에 포함되지 않아 빌드 검증이 실패한다.
-
-## 운영 도구 사용
-
-운영 화면의 `데이터 상태` 패널은 현재 번들에 포함된 사용자, 회차, 자료, 발표 문서 수와 검증 통과 여부를 보여준다. JSON 검증은 빌드 시점에 필수 필드, 상태값, 중복 ID, 사용자/회차 참조를 검사한다. Markdown 검증은 문서의 `owner`, 발표 `session`, 회차 `resources` 참조를 검사한다.
-화면에는 요약만 표시하고 자세한 검증 규칙은 `docs/DATA_MODEL.md`에 둔다.
-
-운영 도구에서 다음 초안을 만들 수 있다.
-
-- 발표자 뽑기 결과
-- 다음 일정과 회차 항목
-- 진도 변경안
-- 벌칙 추가안
-- 현재 회차 기반 회의록 Markdown 초안
-
-각 초안은 복사해서 `data/*.json` 파일에 반영한다.
-회의록 초안은 `자료/공유/회의록/` 같은 Markdown 경로에 저장할 수 있다.
-회의록 초안은 추천 경로와 GitHub 새 파일 생성 링크를 함께 제공한다.
-새 회차의 `resources`는 비워 둔 뒤, 발표 Markdown 파일을 먼저 추가하고 실제 경로를 넣는다. 존재하지 않는 Markdown 경로를 `resources`에 넣으면 빌드 검증이 실패한다.
-
-## 배포
-
-`main` 브랜치에 push하면 `.github/workflows/pages.yml`이 실행된다.
-
-workflow는 다음 순서로 검증한다.
-
-1. `npm ci`
-2. `npm run lint`
-3. `npm run typecheck`
-4. `npm run test`
-5. `npm run build`
-6. `actions/configure-pages`
-7. `npx playwright install --with-deps chromium`
-8. `npx playwright test`로 주요 흐름과 axe 접근성 스모크 테스트 실행
-9. Playwright report/test-results artifact 업로드
-10. GitHub Pages 배포
-
-GitHub Pages 설정은 Actions 배포를 사용하도록 맞춘다.
+publishable key는 브라우저에 노출되어도 되지만 RLS가 항상 권한을 결정한다. service role key, DB password, GitHub OAuth client secret은 절대 커밋하지 않는다.

@@ -17,14 +17,29 @@ export function formatDate(date?: string): string {
   }).format(parsed);
 }
 
-export function formatDateTime(date?: string, startTime?: string, endTime?: string): string {
-  const dateLabel = formatDate(date);
-
-  if (!startTime) {
-    return dateLabel;
+export function formatDateRange(start?: string, end?: string): string {
+  if (!start && !end) {
+    return '미정';
   }
 
-  return `${dateLabel} ${startTime}${endTime ? `-${endTime}` : ''}`;
+  if (!end || start === end) {
+    return formatDate(start);
+  }
+
+  return `${formatDate(start)} - ${formatDate(end)}`;
+}
+
+export function formatTimeRange(startTime?: string, endTime?: string): string {
+  if (!startTime) {
+    return '';
+  }
+
+  return `${startTime}${endTime ? `-${endTime}` : ''}`;
+}
+
+export function formatDateTime(date?: string, startTime?: string, endTime?: string): string {
+  const timeRange = formatTimeRange(startTime, endTime);
+  return `${formatDate(date)}${timeRange ? ` ${timeRange}` : ''}`;
 }
 
 export function todayIso(timeZone = 'Asia/Seoul', now = new Date()): string {

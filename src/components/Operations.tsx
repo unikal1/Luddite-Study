@@ -1,182 +1,195 @@
-import { Check, Clipboard, Database, Dice5, ExternalLink, FileText, Plus, RotateCcw, ShieldCheck } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { materialDocs, presentationDocs } from '../content';
-import { activeUsers, getCurrentSession, getUserName, penalties, progressTopics, sessions } from '../data';
+﻿import { CalendarPlus, Check, Dice5, Save, UserPlus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import type { MemberDraft, SessionDraft, StudyData, StudyMember, StudySession } from '../types';
 import { todayIso } from '../utils/dates';
-import { githubEditUrl, githubNewFileUrl } from '../utils/githubLinks';
-import { slugifyFileName } from '../utils/path';
 
-type DraftTool = 'schedule' | 'progress' | 'penalty' | 'meeting';
+type OperationsProps = {
+  data: StudyData;
+  canManage: boolean;
+  onAddMember: (draft: MemberDraft) => Promise<void>;
+  onChoosePresenters: (sessionId: number, presenterIds: string[]) => Promise<void>;
+  onEndSession: (sessionId: number) => Promise<void>;
+  onSaveSession: (draft: SessionDraft) => Promise<void>;
+  onStartSession: (draft: SessionDraft) => Promise<void>;
+};
 
-export function Operations() {
-  const currentSession = getCurrentSession();
-  const [selectedUsers, setSelectedUsers] = useState<string[]>(activeUsers.map((user) => user.id));
-  const [winner, setWinner] = useState<string>('');
-  const [activeDraft, setActiveDraft] = useState<DraftTool>('schedule');
-  const [nextDate, setNextDate] = useState(() => addDays(currentSession.date, 7));
-  const [nextTime, setNextTime] = useState('20:00');
-  const [nextGoal, setNextGoal] = useState('다음 회차 목표를 입력한다.');
-  const [progressId, setProgressId] = useState(progressTopics[0]?.id ?? '');
-  const [progressCurrent, setProgressCurrent] = useState(progressTopics[0]?.current ?? 0);
-  const [penaltyUser, setPenaltyUser] = useState(activeUsers[0]?.id ?? '');
-  const [penaltyReason, setPenaltyReason] = useState('지각');
-  const [penaltyAmount, setPenaltyAmount] = useState(1000);
-  const [copiedKey, setCopiedKey] = useState('');
-  const selectedProgressTopic = progressTopics.find((item) => item.id === progressId) ?? progressTopics[0];
-  const meetingNotePath = `자료/공유/회의록/${currentSession.id}회차-운영-기록.md`;
-  const normalizedNextDate = isIsoDate(nextDate) ? nextDate : addDays(currentSession.date, 7);
-  const normalizedNextTime = isTime(nextTime) ? nextTime : '20:00';
-  const normalizedNextGoal = nextGoal.trim() || '다음 회차 목표를 입력한다.';
-  const normalizedProgressCurrent = clampNumber(progressCurrent, 0, selectedProgressTopic?.target ?? 0);
-  const normalizedPenaltyReason = penaltyReason.trim() || '운영 사유';
-  const normalizedPenaltyAmount = clampNumber(penaltyAmount, 0, 1_000_000);
-  const draftTabs: Array<{ key: DraftTool; label: string }> = [
-    { key: 'schedule', label: '일정' },
-    { key: 'progress', label: '진도' },
-    { key: 'penalty', label: '벌칙' },
-    { key: 'meeting', label: '회의록' }
-  ];
-
-  const nextSessionDraft = useMemo(() => {
-    const nextId = Math.max(...sessions.map((session) => session.id)) + 1;
-    return JSON.stringify({
-      id: nextId,
-      title: `${nextId}회차`,
-      week: nextId,
-      status: 'upcoming',
-      date: normalizedNextDate,
-      startTime: normalizedNextTime,
-      endTime: '21:30',
-      location: 'Discord',
-      goal: normalizedNextGoal,
-      presenterIds: winner ? [winner] : [],
-      facilitatorId: currentSession.facilitatorId,
-      agenda: ['진도 점검', '발표', '다음 일정 확정'],
-      resources: [],
-      progress: {
-        label: currentSession.progress.label,
-        current: currentSession.progress.current,
-        target: currentSession.progress.target,
-        unit: currentSession.progress.unit
-      }
-    }, null, 2);
-  }, [currentSession, normalizedNextDate, normalizedNextGoal, normalizedNextTime, winner]);
-
-  const progressDraft = useMemo(() => {
-    return JSON.stringify({
-      ...selectedProgressTopic,
-      current: normalizedProgressCurrent,
-      notes: `${todayIso()} 기준 업데이트`
-    }, null, 2);
-  }, [normalizedProgressCurrent, selectedProgressTopic]);
+export function Operations({
+  data,
+  canManage,
+  onAddMember,
+  onChoosePresenters,
+  onEndSession,
+  onSaveSession,
+  onStartSession
+}: OperationsProps) {
+  const currentSession = getCurrentSession(data.sessions);
+  const [status, setStatus] = useState('');
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState(() => data.members.filter((member) => member.active).map((member) => member.id));
+  const [winnerIds, setWinnerIds] = useState<string[]>(currentSession.presenterMemberIds);
+  const [selectedSessionId, setSelectedSessionId] = useState(currentSession.id);
+  const selectedSession = data.sessions.find((session) => session.id === selectedSessionId) ?? currentSession;
+  const [sessionDraft, setSessionDraft] = useState<SessionDraft>(() => toSessionDraft(selectedSession));
+  const [memberDraft, setMemberDraft] = useState<MemberDraft>({
+    memberUid: '',
+    displayName: '',
+    inviteEmail: '',
+    githubUsername: '',
+    role: 'member',
+    roleLabel: '스터디원',
+    color: '#0f766e'
+  });
 
   useEffect(() => {
-    const topic = progressTopics.find((item) => item.id === progressId);
-    setProgressCurrent(topic?.current ?? 0);
-  }, [progressId]);
+    setSessionDraft(toSessionDraft(selectedSession));
+    setWinnerIds(selectedSession.presenterMemberIds);
+  }, [selectedSession]);
 
-  const penaltyDraft = useMemo(() => JSON.stringify({
-    id: `penalty-${todayIso()}-${penaltyUser}-${slugifyFileName(normalizedPenaltyReason)}`,
-    userId: penaltyUser,
-    sessionId: currentSession.id,
-    type: normalizedPenaltyReason,
-    reason: normalizedPenaltyReason,
-    amount: normalizedPenaltyAmount,
-    status: 'open',
-    dueDate: normalizedNextDate
-  }, null, 2), [currentSession.id, normalizedNextDate, normalizedPenaltyAmount, normalizedPenaltyReason, penaltyUser]);
-  const meetingNoteDraft = useMemo(() => {
-    const openPenalties = penalties.filter((penalty) => penalty.status === 'open');
+  const activeMembers = data.members.filter((member) => member.active);
+  const nextWeek = Math.max(...data.sessions.map((session) => session.week), 0) + 1;
+  const presenterNames = winnerIds.map((id) => memberName(data.members, id)).join(', ') || '당일 추첨 전';
 
-    return `# ${currentSession.id}회차 운영 기록
-
-- 일시: ${currentSession.date} ${currentSession.startTime}-${currentSession.endTime}
-- 장소: ${currentSession.location}
-- 진행자: ${getUserName(currentSession.facilitatorId)}
-- 발표자: ${currentSession.presenterIds.map(getUserName).join(', ') || '미정'}
-
-## 목표
-
-${currentSession.goal}
-
-## 안건
-
-${currentSession.agenda.map((item) => `- ${item}`).join('\n')}
-
-## 진도
-
-- ${currentSession.progress.label}: ${currentSession.progress.current}/${currentSession.progress.target} ${currentSession.progress.unit}
-
-## 벌칙
-
-${openPenalties.length > 0
-  ? openPenalties.map((penalty) => `- ${getUserName(penalty.userId)}: ${penalty.reason} (${penalty.amount.toLocaleString('ko-KR')}원)`).join('\n')
-  : '- 미정산 벌칙 없음'}
-
-## 다음 액션
-
-- [ ] 다음 일정 확정
-- [ ] 다음 발표자 반영
-- [ ] 자료/발표 문서 업데이트 확인
-`;
-  }, [currentSession]);
-
-  function toggleUser(userId: string) {
-    setSelectedUsers((current) => (
-      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]
+  function toggleCandidate(memberId: string) {
+    setSelectedCandidateIds((current) => (
+      current.includes(memberId) ? current.filter((id) => id !== memberId) : [...current, memberId]
     ));
   }
 
   function drawPresenter() {
-    if (selectedUsers.length === 0) {
-      setWinner('');
+    if (selectedCandidateIds.length === 0) {
+      setWinnerIds([]);
       return;
     }
 
     const random = crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
-    const index = Math.floor(random * selectedUsers.length);
-    setWinner(selectedUsers[index]);
+    const winner = selectedCandidateIds[Math.floor(random * selectedCandidateIds.length)];
+    setWinnerIds([winner]);
   }
 
-  async function copy(key: string, value: string) {
-    await navigator.clipboard.writeText(value);
-    setCopiedKey(key);
-    window.setTimeout(() => setCopiedKey(''), 1800);
+  async function savePresenters() {
+    await run('발표자를 저장했습니다.', () => onChoosePresenters(selectedSession.id, winnerIds));
+  }
+
+  async function addMember() {
+    await run('참여자를 추가했습니다.', async () => {
+      await onAddMember(memberDraft);
+      setMemberDraft({
+        memberUid: '',
+        displayName: '',
+        inviteEmail: '',
+        githubUsername: '',
+        role: 'member',
+        roleLabel: '스터디원',
+        color: '#0f766e'
+      });
+    });
+  }
+
+  async function saveSession() {
+    await run('회차를 저장했습니다.', () => onSaveSession(sessionDraft));
+  }
+
+  async function endSession() {
+    await run('회차를 종료했습니다.', () => onEndSession(selectedSession.id));
+  }
+
+  async function startNextSession() {
+    const baseDate = todayIso();
+    await run('새 회차를 시작했습니다.', () => onStartSession({
+      ...sessionDraft,
+      id: undefined,
+      title: `${nextWeek}회차`,
+      week: nextWeek,
+      status: 'current',
+      startsOn: baseDate,
+      endsOn: baseDate,
+      presentationOn: baseDate,
+      agenda: ['진도 점검', '당일 발표자 추첨', '발표', '다음 액션 정리']
+    }));
+  }
+
+  async function run(successMessage: string, action: () => Promise<void>) {
+    if (!canManage) {
+      setStatus('운영 권한이 있는 멤버만 저장할 수 있습니다.');
+      return;
+    }
+
+    setStatus('저장 중입니다.');
+
+    try {
+      await action();
+      setStatus(successMessage);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '저장에 실패했습니다.');
+    }
   }
 
   return (
     <div className="operations-page">
       <section className="operations-header">
         <div>
-          <p className="eyebrow">운영 도구</p>
-          <h1>회차 진행 보드</h1>
-          <p className="lead">추첨과 변경 초안을 만들고, 저장소 파일에 반영할 JSON 조각을 복사한다.</p>
+          <p className="eyebrow">운영</p>
+          <h1>스터디 운영 보드</h1>
+          <p className="lead">참여자, 발표자 추첨, 회차 기간과 발표일을 Supabase에 직접 반영합니다.</p>
         </div>
-        <a className="secondary-button" href={githubEditUrl('data/sessions.json')} target="_blank" rel="noreferrer">
-          data 수정
-        </a>
+        <StatusBox canManage={canManage} />
       </section>
 
       <div className="tool-grid">
-        <section className="tool-panel" aria-labelledby="data-health-title">
+        <section className="tool-panel" aria-labelledby="health-title">
           <div className="section-heading">
-            <ShieldCheck size={18} aria-hidden="true" />
-            <h2 id="data-health-title">데이터 상태</h2>
+            <Check size={18} aria-hidden="true" />
+            <h2 id="health-title">데이터 상태</h2>
           </div>
           <div className="compact-health">
-            <b>검증 통과</b>
-            <span>사용자 {activeUsers.length}명 · 회차 {sessions.length}개 · 문서 {materialDocs.length + presentationDocs.length}개</span>
+            <b>Supabase 연결</b>
+            <span>참여자 {activeMembers.length}명 · 회차 {data.sessions.length}개 · 문서 {data.documents.length}개</span>
           </div>
-          <div className="resource-list">
-            <a href={githubEditUrl('data/users.json')} target="_blank" rel="noreferrer">
-              <Database size={14} aria-hidden="true" />
-              data/users.json
-            </a>
-            <a href={githubEditUrl('docs/DATA_MODEL.md')} target="_blank" rel="noreferrer">
-              <FileText size={14} aria-hidden="true" />
-              DATA_MODEL.md
-            </a>
+        </section>
+
+        <section className="tool-panel" aria-labelledby="member-title">
+          <div className="section-heading">
+            <UserPlus size={18} aria-hidden="true" />
+            <h2 id="member-title">참여자 추가</h2>
           </div>
+          <div className="form-grid">
+            <label>
+              멤버 ID
+              <input value={memberDraft.memberUid} onChange={(event) => setMemberDraft({ ...memberDraft, memberUid: event.target.value })} disabled={!canManage} />
+            </label>
+            <label>
+              이름
+              <input value={memberDraft.displayName} onChange={(event) => setMemberDraft({ ...memberDraft, displayName: event.target.value })} disabled={!canManage} />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              초대 이메일
+              <input value={memberDraft.inviteEmail} onChange={(event) => setMemberDraft({ ...memberDraft, inviteEmail: event.target.value })} type="email" disabled={!canManage} />
+            </label>
+            <label>
+              GitHub ID
+              <input value={memberDraft.githubUsername} onChange={(event) => setMemberDraft({ ...memberDraft, githubUsername: event.target.value })} disabled={!canManage} />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              권한
+              <select value={memberDraft.role} onChange={(event) => setMemberDraft({ ...memberDraft, role: event.target.value as MemberDraft['role'] })} disabled={!canManage}>
+                <option value="member">스터디원</option>
+                <option value="facilitator">진행자</option>
+                <option value="admin">관리자</option>
+                <option value="owner">운영자</option>
+              </select>
+            </label>
+            <label>
+              색상
+              <input value={memberDraft.color} onChange={(event) => setMemberDraft({ ...memberDraft, color: event.target.value })} type="color" disabled={!canManage} />
+            </label>
+          </div>
+          <button className="primary-button" type="button" onClick={() => void addMember()} disabled={!canManage || !memberDraft.memberUid.trim() || !memberDraft.displayName.trim()}>
+            <UserPlus size={18} aria-hidden="true" />
+            참여자 추가
+          </button>
         </section>
 
         <section className="tool-panel" aria-labelledby="draw-title">
@@ -184,11 +197,19 @@ ${openPenalties.length > 0
             <Dice5 size={18} aria-hidden="true" />
             <h2 id="draw-title">발표자 뽑기</h2>
           </div>
+          <label>
+            대상 회차
+            <select value={selectedSessionId} onChange={(event) => setSelectedSessionId(Number(event.target.value))}>
+              {data.sessions.map((session) => (
+                <option key={session.id} value={session.id}>{session.week}회차 · {session.title}</option>
+              ))}
+            </select>
+          </label>
           <div className="checkbox-grid">
-            {activeUsers.map((user) => (
-              <label className="check-row" key={user.id}>
-                <input type="checkbox" checked={selectedUsers.includes(user.id)} onChange={() => toggleUser(user.id)} />
-                <span>{user.name}</span>
+            {activeMembers.map((member) => (
+              <label className="check-row" key={member.id}>
+                <input type="checkbox" checked={selectedCandidateIds.includes(member.id)} onChange={() => toggleCandidate(member.id)} />
+                <span>{member.displayName}</span>
               </label>
             ))}
           </div>
@@ -197,281 +218,139 @@ ${openPenalties.length > 0
               <Dice5 size={18} aria-hidden="true" />
               뽑기
             </button>
-            <button className="icon-button" type="button" onClick={() => setWinner('')} aria-label="추첨 초기화">
-              <RotateCcw size={18} aria-hidden="true" />
+            <button className="secondary-button" type="button" onClick={() => void savePresenters()} disabled={!canManage}>
+              <Save size={18} aria-hidden="true" />
+              결과 저장
             </button>
           </div>
-          <p className="winner-box">{winner ? `${getUserName(winner)} 발표` : '후보를 선택하고 뽑기를 실행하세요.'}</p>
+          <p className="winner-box">{presenterNames}</p>
         </section>
 
-        <section className="tool-panel tool-panel--wide" aria-labelledby="draft-tool-title">
+        <section className="tool-panel tool-panel--wide" aria-labelledby="session-title">
           <div className="section-heading">
-            <Plus size={18} aria-hidden="true" />
-            <h2 id="draft-tool-title">변경 초안</h2>
+            <CalendarPlus size={18} aria-hidden="true" />
+            <h2 id="session-title">회차 관리</h2>
           </div>
-          <div className="tool-tabs" aria-label="초안 종류">
-            {draftTabs.map((tab) => (
-              <button
-                className={activeDraft === tab.key ? 'tool-tab tool-tab--active' : 'tool-tab'}
-                key={tab.key}
-                type="button"
-                aria-pressed={activeDraft === tab.key}
-                onClick={() => setActiveDraft(tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <label>
+            회차 선택
+            <select value={selectedSessionId} onChange={(event) => setSelectedSessionId(Number(event.target.value))}>
+              {data.sessions.map((session) => (
+                <option key={session.id} value={session.id}>{session.week}회차 · {session.title}</option>
+              ))}
+            </select>
+          </label>
+          <div className="form-grid">
+            <label>
+              제목
+              <input value={sessionDraft.title} onChange={(event) => setSessionDraft({ ...sessionDraft, title: event.target.value })} disabled={!canManage} />
+            </label>
+            <label>
+              상태
+              <select value={sessionDraft.status} onChange={(event) => setSessionDraft({ ...sessionDraft, status: event.target.value as StudySession['status'] })} disabled={!canManage}>
+                <option value="planned">계획</option>
+                <option value="upcoming">예정</option>
+                <option value="current">진행 중</option>
+                <option value="done">종료</option>
+              </select>
+            </label>
           </div>
-
-          {activeDraft === 'schedule' ? (
-            <div className="draft-section">
-              <div className="form-grid">
-                <label>
-                  날짜
-                  <input type="date" value={nextDate} onChange={(event) => setNextDate(event.target.value)} />
-                </label>
-                <label>
-                  시작
-                  <input type="time" value={nextTime} onChange={(event) => setNextTime(event.target.value)} />
-                </label>
-              </div>
-              <label>
-                목표
-                <textarea value={nextGoal} onChange={(event) => setNextGoal(event.target.value)} rows={3} />
-              </label>
-              <ValidationNotice
-                items={[
-                  !isIsoDate(nextDate) ? `날짜는 ${normalizedNextDate}로 보정됩니다.` : '',
-                  !isTime(nextTime) ? `시작 시간은 ${normalizedNextTime}로 보정됩니다.` : '',
-                  !nextGoal.trim() ? '목표가 비어 있어 기본 목표 문구로 보정됩니다.' : ''
-                ]}
-              />
-              <p className="helper-text">발표 자료 파일을 먼저 추가한 뒤 `resources`에 실제 Markdown 경로를 넣어야 빌드 검증을 통과합니다.</p>
-              <Snippet
-                title="sessions.json 추가 항목"
-                value={nextSessionDraft}
-                copied={copiedKey === 'session'}
-                targetPath="data/sessions.json"
-                actionHref={githubEditUrl('data/sessions.json')}
-                actionLabel="sessions 열기"
-                onCopy={() => copy('session', nextSessionDraft)}
-              />
-            </div>
-          ) : null}
-
-          {activeDraft === 'progress' ? (
-            <div className="draft-section">
-              <div className="form-grid">
-                <label>
-                  주제
-                  <select value={progressId} onChange={(event) => setProgressId(event.target.value)}>
-                    {progressTopics.map((topic) => (
-                      <option key={topic.id} value={topic.id}>{topic.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  현재 진도
-                  <input
-                    type="number"
-                    min="0"
-                    max={selectedProgressTopic?.target}
-                    value={progressCurrent}
-                    onChange={(event) => {
-                      const nextValue = Number(event.target.value);
-                      setProgressCurrent(clampNumber(nextValue, 0, selectedProgressTopic?.target ?? 0));
-                    }}
-                  />
-                </label>
-              </div>
-              <ValidationNotice
-                items={[
-                  progressCurrent !== normalizedProgressCurrent
-                    ? `진도는 0-${selectedProgressTopic?.target ?? 0} 범위로 보정됩니다.`
-                    : ''
-                ]}
-              />
-              <Snippet
-                title="progress.json 교체 항목"
-                value={progressDraft}
-                copied={copiedKey === 'progress'}
-                targetPath="data/progress.json"
-                actionHref={githubEditUrl('data/progress.json')}
-                actionLabel="progress 열기"
-                onCopy={() => copy('progress', progressDraft)}
-              />
-            </div>
-          ) : null}
-
-          {activeDraft === 'penalty' ? (
-            <div className="draft-section">
-              <div className="form-grid">
-                <label>
-                  사용자
-                  <select value={penaltyUser} onChange={(event) => setPenaltyUser(event.target.value)}>
-                    {activeUsers.map((user) => (
-                      <option key={user.id} value={user.id}>{user.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  금액
-                  <input
-                    type="number"
-                    min="0"
-                    step="500"
-                    value={penaltyAmount}
-                    onChange={(event) => setPenaltyAmount(clampNumber(Number(event.target.value), 0, 1_000_000))}
-                  />
-                </label>
-              </div>
-              <label>
-                사유
-                <input value={penaltyReason} onChange={(event) => setPenaltyReason(event.target.value)} />
-              </label>
-              <ValidationNotice
-                items={[
-                  !penaltyReason.trim() ? '사유가 비어 있어 기본 사유로 보정됩니다.' : '',
-                  penaltyAmount !== normalizedPenaltyAmount ? '금액은 0원 이상 1,000,000원 이하로 보정됩니다.' : ''
-                ]}
-              />
-              <Snippet
-                title="penalties.json 추가 항목"
-                value={penaltyDraft}
-                copied={copiedKey === 'penalty'}
-                targetPath="data/penalties.json"
-                actionHref={githubEditUrl('data/penalties.json')}
-                actionLabel="penalties 열기"
-                onCopy={() => copy('penalty', penaltyDraft)}
-              />
-            </div>
-          ) : null}
-
-          {activeDraft === 'meeting' ? (
-            <div className="draft-section">
-              <p className="helper-text">현재 회차 상태를 Markdown 운영 기록으로 복사해 추천 경로에 새 파일로 저장할 수 있습니다.</p>
-              <Snippet
-                title="운영 기록 Markdown"
-                value={meetingNoteDraft}
-                copied={copiedKey === 'meeting'}
-                targetPath={meetingNotePath}
-                actionHref={githubNewFileUrl(meetingNotePath)}
-                actionLabel="회의록 만들기"
-                onCopy={() => copy('meeting', meetingNoteDraft)}
-              />
-            </div>
-          ) : null}
+          <div className="form-grid">
+            <label>
+              시작일
+              <input value={sessionDraft.startsOn} onChange={(event) => setSessionDraft({ ...sessionDraft, startsOn: event.target.value })} type="date" disabled={!canManage} />
+            </label>
+            <label>
+              종료일
+              <input value={sessionDraft.endsOn} onChange={(event) => setSessionDraft({ ...sessionDraft, endsOn: event.target.value })} type="date" disabled={!canManage} />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              발표일
+              <input value={sessionDraft.presentationOn} onChange={(event) => setSessionDraft({ ...sessionDraft, presentationOn: event.target.value })} type="date" disabled={!canManage} />
+            </label>
+            <label>
+              진행자
+              <select value={sessionDraft.facilitatorMemberId ?? ''} onChange={(event) => setSessionDraft({ ...sessionDraft, facilitatorMemberId: event.target.value || null })} disabled={!canManage}>
+                <option value="">미정</option>
+                {activeMembers.map((member) => (
+                  <option key={member.id} value={member.id}>{member.displayName}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              시작 시간
+              <input value={sessionDraft.startTime} onChange={(event) => setSessionDraft({ ...sessionDraft, startTime: event.target.value })} type="time" disabled={!canManage} />
+            </label>
+            <label>
+              종료 시간
+              <input value={sessionDraft.endTime} onChange={(event) => setSessionDraft({ ...sessionDraft, endTime: event.target.value })} type="time" disabled={!canManage} />
+            </label>
+          </div>
+          <label>
+            장소
+            <input value={sessionDraft.location} onChange={(event) => setSessionDraft({ ...sessionDraft, location: event.target.value })} disabled={!canManage} />
+          </label>
+          <label>
+            목표
+            <textarea value={sessionDraft.goal} onChange={(event) => setSessionDraft({ ...sessionDraft, goal: event.target.value })} rows={3} disabled={!canManage} />
+          </label>
+          <label>
+            안건
+            <textarea value={sessionDraft.agenda.join('\n')} onChange={(event) => setSessionDraft({ ...sessionDraft, agenda: event.target.value.split('\n').map((line) => line.trim()).filter(Boolean) })} rows={4} disabled={!canManage} />
+          </label>
+          <div className="tool-actions">
+            <button className="primary-button" type="button" onClick={() => void saveSession()} disabled={!canManage}>
+              <Save size={18} aria-hidden="true" />
+              회차 저장
+            </button>
+            <button className="secondary-button" type="button" onClick={() => void startNextSession()} disabled={!canManage}>
+              <CalendarPlus size={18} aria-hidden="true" />
+              새 회차 시작
+            </button>
+            <button className="danger-button" type="button" onClick={() => void endSession()} disabled={!canManage || selectedSession.status === 'done'}>
+              회차 종료
+            </button>
+          </div>
         </section>
       </div>
+
+      {status ? <p className="form-status">{status}</p> : null}
     </div>
   );
 }
 
-function ValidationNotice({ items }: { items: string[] }) {
-  const visibleItems = items.filter(Boolean);
-
-  if (visibleItems.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="validation-notice" role="status">
-      {visibleItems.map((item) => (
-        <span key={item}>{item}</span>
-      ))}
-    </div>
-  );
+function StatusBox({ canManage }: { canManage: boolean }) {
+  return <span className={canManage ? 'permission-badge permission-badge--ok' : 'permission-badge'}>{canManage ? '운영 가능' : '보기 전용'}</span>;
 }
 
-function addDays(date: string, days: number): string {
-  const [year, month, day] = date.split('-').map(Number);
-
-  if (!year || !month || !day) {
-    return todayIso();
-  }
-
-  const parsed = new Date(Date.UTC(year, month - 1, day + days));
-  return parsed.toISOString().slice(0, 10);
+function getCurrentSession(sessions: StudySession[]): StudySession {
+  return sessions.find((session) => session.status === 'current') ??
+    sessions.find((session) => session.status === 'upcoming') ??
+    sessions[0];
 }
 
-function clampNumber(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) {
-    return min;
-  }
-
-  return Math.min(Math.max(value, min), max);
+function toSessionDraft(session: StudySession): SessionDraft {
+  return {
+    id: session.id,
+    title: session.title,
+    week: session.week,
+    status: session.status,
+    startsOn: session.startsOn,
+    endsOn: session.endsOn,
+    presentationOn: session.presentationOn,
+    startTime: session.startTime,
+    endTime: session.endTime,
+    location: session.location,
+    goal: session.goal,
+    facilitatorMemberId: session.facilitatorMemberId,
+    agenda: session.agenda
+  };
 }
 
-function isIsoDate(value: string): boolean {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-
-  if (!match) {
-    return false;
-  }
-
-  const [, year, month, day] = match.map(Number);
-  const parsed = new Date(Date.UTC(year, month - 1, day));
-
-  return parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day;
+function memberName(members: StudyMember[], memberId: string): string {
+  return members.find((member) => member.id === memberId)?.displayName ?? memberId;
 }
 
-function isTime(value: string): boolean {
-  const match = value.match(/^(\d{2}):(\d{2})$/);
-
-  if (!match) {
-    return false;
-  }
-
-  const [, hour, minute] = match.map(Number);
-  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
-}
-
-function Snippet({
-  title,
-  value,
-  copied,
-  targetPath,
-  actionHref,
-  actionLabel,
-  onCopy
-}: {
-  title: string;
-  value: string;
-  copied: boolean;
-  targetPath: string;
-  actionHref: string;
-  actionLabel: string;
-  onCopy: () => void;
-}) {
-  return (
-    <div className="snippet">
-      <div className="split-line snippet-header">
-        <strong>{title}</strong>
-        <div className="toolbar-actions">
-          <a className="icon-button" href={actionHref} target="_blank" rel="noreferrer" aria-label={`${actionLabel}: ${targetPath}`}>
-            <ExternalLink size={18} aria-hidden="true" />
-          </a>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onCopy}
-            aria-label={copied ? `${title} 복사됨` : `${title} 복사`}
-            title={copied ? '복사됨' : '복사'}
-          >
-            {copied ? <Check size={18} aria-hidden="true" /> : <Clipboard size={18} aria-hidden="true" />}
-          </button>
-        </div>
-      </div>
-      <div className="snippet-target">
-        <span>반영 위치</span>
-        <code>{targetPath}</code>
-      </div>
-      <details className="snippet-details">
-        <summary>초안 보기</summary>
-        <pre tabIndex={0}><code>{value}</code></pre>
-      </details>
-    </div>
-  );
-}

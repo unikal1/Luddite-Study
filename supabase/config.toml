@@ -1,0 +1,20 @@
+project_id = "rsjcdtpmxekyevhqqfdn"
+
+[api]
+enabled = true
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+enabled = true
+site_url = "https://unikal1.github.io/Luddite-Study/"
+additional_redirect_urls = [
+  "http://localhost:5173/Luddite-Study/",
+  "http://127.0.0.1:5173/Luddite-Study/",
+  "http://127.0.0.1:4173/Luddite-Study/"
+]
+
+[storage]
+enabled = true
+file_size_limit = "20MiB"

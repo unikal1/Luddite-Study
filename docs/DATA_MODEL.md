@@ -1,153 +1,37 @@
-# 데이터 모델
+# Data Model
 
-## Markdown frontmatter
+Supabase Postgres가 모든 영속 데이터의 SSOT다.
 
-자료와 발표 문서는 공통 frontmatter를 사용한다.
+## Tables
 
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `title` | string | 예 | 화면에 표시할 제목 |
-| `owner` | string | 예 | `data/users.json`의 `id`, 공유 자료는 `shared` |
-| `session` | number | 발표만 | 발표 회차 번호 |
-| `createdAt` | string | 권장 | `YYYY-MM-DD` |
-| `updatedAt` | string | 권장 | `YYYY-MM-DD` |
-| `tags` | string[] | 아니오 | 검색/분류 태그 |
-| `summary` | string | 권장 | 목록과 대시보드 요약 |
+- `profiles`: Supabase Auth 사용자 프로필. `auth.users.id`를 참조한다.
+- `study_members`: 스터디 멤버와 권한. `member_uid`, 표시 이름, 초대 이메일, GitHub ID, 역할, 활성 여부를 저장한다.
+- `study_sessions`: 회차, 주차, 기간, 발표일, 시간, 장소, 진행자, 당일 발표자, 안건, 진도를 저장한다.
+- `document_folders`: 자료/발표의 디렉토리 트리. 경로 기반이므로 깊이 제한이 없다.
+- `documents`: Markdown 자료/발표 본문, 제목, 요약, 태그, 저자, 회차, 경로를 저장한다.
+- `document_versions`: 문서 insert/update 시 자동 기록되는 버전 이력.
+- `progress_topics`: 운영 진도 항목.
+- `penalties`: 벌칙 데이터. 대시보드에는 표시하지 않지만 운영 데이터로 유지한다.
+- `activity_events`: 문서/회차 변경 활동 로그.
+- `attachments`: Storage 객체와 문서의 연결 정보.
 
-빌드 검증은 `title`, `owner`, 발표 문서의 `session` 누락을 실패시킨다.
+## Storage
 
-개인 자료 경로:
+버킷: `study-attachments`
 
-```text
-자료/<사용자 id>/...md
-```
+- private bucket
+- 허용 MIME: `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `image/svg+xml`
+- 최대 크기: 20 MiB
+- 클라이언트는 upload 후 `attachments` row를 만든다.
 
-공유 자료 경로:
+## RLS
 
-```text
-자료/공유/...md
-```
+모든 public 테이블은 RLS가 켜져 있다.
 
-발표 자료 경로:
+- `authenticated` 사용자 중 활성 `study_members`만 데이터 접근 가능
+- 운영 쓰기는 `owner/admin/facilitator`
+- 문서 수정/삭제는 운영자 또는 문서 소유자/작성자
+- Storage `storage.objects`도 `study-attachments` 버킷에 대해 활성 멤버만 접근 가능
+- service role은 프론트엔드에서 사용하지 않는다.
 
-```text
-발표/<회차>/<사용자 id>/...md
-```
-
-## `data/users.json`
-
-```ts
-type User = {
-  id: string;
-  name: string;
-  github?: string;
-  role: string;
-  active: boolean;
-  color: string;
-  materialPath: string;
-  presentationPath: string;
-};
-```
-
-`id`는 경로의 사용자 이름과 일치해야 한다.
-`materialPath`는 `자료/<id>`, `presentationPath`는 `발표/*/<id>` 형식이어야 하며 빌드 검증에서 확인한다.
-
-## `data/sessions.json`
-
-```ts
-type StudySession = {
-  id: number;
-  title: string;
-  week: number;
-  status: 'planned' | 'upcoming' | 'current' | 'done';
-  date: string;
-  startTime: string;
-  endTime: string;
-  location: string;
-  goal: string;
-  presenterIds: string[];
-  facilitatorId: string;
-  agenda: string[];
-  resources: string[];
-  progress: {
-    label: string;
-    current: number;
-    target: number;
-    unit: string;
-  };
-};
-```
-
-현재 회차는 `status: "current"`인 첫 항목이다. 없으면 `upcoming` 항목을 사용한다.
-`date`는 실제 유효한 `YYYY-MM-DD`, `startTime`과 `endTime`은 `00:00-23:59` 범위의 `HH:MM` 형식이어야 한다.
-
-## `data/progress.json`
-
-```ts
-type ProgressTopic = {
-  id: string;
-  name: string;
-  ownerId: string;
-  current: number;
-  target: number;
-  unit: string;
-  status: 'planned' | 'active' | 'done';
-  notes: string;
-};
-```
-
-## `data/penalties.json`
-
-```ts
-type Penalty = {
-  id: string;
-  userId: string;
-  sessionId: number;
-  type: string;
-  reason: string;
-  amount: number;
-  status: 'open' | 'settled';
-  dueDate: string;
-  settledAt?: string;
-};
-```
-
-## 관계
-
-```text
-users.id
-  -> Markdown owner
-  -> sessions.presenterIds
-  -> sessions.facilitatorId
-  -> progress.ownerId
-  -> penalties.userId
-
-sessions.id
-  -> 발표/<회차>/
-  -> Markdown session
-  -> penalties.sessionId
-```
-
-앱은 `src/data/validate.ts`에서 JSON을 읽을 때 필수 필드, 중복 ID, 상태값, 사용자/회차 참조, 진도 목표값을 검증한다.
-
-Markdown 문서는 `src/contentValidation.ts`에서 다음 항목을 검증한다.
-
-- `title`, `owner`가 frontmatter에 존재하는지
-- `owner`가 `shared`이거나 `data/users.json`의 사용자 ID인지
-- 발표 문서의 `session`이 frontmatter에 존재하는지
-- 발표 문서의 `session`이 `data/sessions.json`에 존재하는지
-- `data/sessions.json`의 `resources`가 실제 Markdown 파일을 가리키는지
-- `createdAt`, `updatedAt`이 `YYYY-MM-DD` 형식인지
-- Markdown 이미지가 `/assets/...`, `https://...`, `data:` 같은 정적 배포 가능한 경로인지
-
-검증에 실패하면 빌드와 테스트가 실패한다.
-
-## 이미지 파일
-
-이미지는 `public/assets/` 아래에 저장하고 Markdown에서는 `/assets/<파일명>`으로 참조한다.
-
-```markdown
-![스터디 보드 예시](/assets/study-board.svg)
-```
-
-문서와 같은 디렉토리의 상대 경로 이미지(`./diagram.png`)는 정적 빌드에 자동 포함되지 않으므로 사용하지 않는다.
+보안 advisor 기준 경고는 현재 없다.
