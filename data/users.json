@@ -1,0 +1,33 @@
+[
+  {
+    "id": "alice",
+    "name": "Alice",
+    "github": "alice-study",
+    "role": "진행자",
+    "active": true,
+    "color": "#0f766e",
+    "materialPath": "자료/alice",
+    "presentationPath": "발표/*/alice"
+  },
+  {
+    "id": "bob",
+    "name": "Bob",
+    "github": "bob-study",
+    "role": "기록",
+    "active": true,
+    "color": "#7c3aed",
+    "materialPath": "자료/bob",
+    "presentationPath": "발표/*/bob"
+  },
+  {
+    "id": "chris",
+    "name": "Chris",
+    "github": "chris-study",
+    "role": "스터디원",
+    "active": true,
+    "color": "#b45309",
+    "materialPath": "자료/chris",
+    "presentationPath": "발표/*/chris"
+  }
+]
+

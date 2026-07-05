@@ -1,0 +1,45 @@
+{
+  "name": "luddite-study",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit --pretty false",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "npm run build && playwright test"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.0",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@eslint/js": "9.39.4",
+    "@playwright/test": "1.61.1",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@types/node": "22.10.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "4.3.4",
+    "eslint": "9.39.4",
+    "eslint-plugin-react-hooks": "5.1.0",
+    "eslint-plugin-react-refresh": "0.4.16",
+    "globals": "15.14.0",
+    "jsdom": "25.0.1",
+    "typescript": "5.7.2",
+    "typescript-eslint": "8.18.2",
+    "vite": "6.4.3",
+    "vitest": "3.2.6"
+  }
+}

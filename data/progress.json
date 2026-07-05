@@ -1,0 +1,33 @@
+[
+  {
+    "id": "react-core",
+    "name": "React 핵심 개념",
+    "ownerId": "alice",
+    "current": 1,
+    "target": 4,
+    "unit": "챕터",
+    "status": "active",
+    "notes": "렌더링과 상태 업데이트 흐름을 우선 정리한다."
+  },
+  {
+    "id": "typescript-modeling",
+    "name": "TypeScript 실전 패턴",
+    "ownerId": "bob",
+    "current": 2,
+    "target": 5,
+    "unit": "챕터",
+    "status": "active",
+    "notes": "데이터 모델링과 유틸 타입을 발표 자료로 연결한다."
+  },
+  {
+    "id": "browser-debugging",
+    "name": "브라우저 디버깅",
+    "ownerId": "chris",
+    "current": 0,
+    "target": 3,
+    "unit": "실습",
+    "status": "planned",
+    "notes": "DevTools 네트워크/성능 탭 실습을 준비한다."
+  }
+]
+

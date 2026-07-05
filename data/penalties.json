@@ -1,0 +1,24 @@
+[
+  {
+    "id": "penalty-2026-07-12-bob",
+    "userId": "bob",
+    "sessionId": 1,
+    "type": "지각",
+    "reason": "10분 지각",
+    "amount": 1000,
+    "status": "open",
+    "dueDate": "2026-07-19"
+  },
+  {
+    "id": "penalty-2026-07-12-chris",
+    "userId": "chris",
+    "sessionId": 1,
+    "type": "자료 미제출",
+    "reason": "발표 전날 자료 미제출",
+    "amount": 2000,
+    "status": "settled",
+    "dueDate": "2026-07-19",
+    "settledAt": "2026-07-15"
+  }
+]
+
