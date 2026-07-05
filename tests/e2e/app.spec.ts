@@ -28,6 +28,64 @@ test('dashboard, material reader, composer, and tools work on desktop', async ({
   await page.getByRole('textbox', { name: 'Markdown' }).fill('# 검증\n\n- [x] 대시보드 확인\n- [ ] 모바일 확인');
   await expect(page.getByText('자료/alice/browser-check.md')).toBeVisible();
   await expect(page.getByRole('heading', { name: '검증' })).toBeVisible();
+
+  const repositoryRequests: string[] = [];
+  const corsHeaders = {
+    'access-control-allow-headers': 'authorization,content-type,x-github-api-version,accept',
+    'access-control-allow-methods': 'GET,PUT,DELETE,OPTIONS',
+    'access-control-allow-origin': '*'
+  };
+  await page.route('https://api.github.com/repos/unikal1/Luddite-Study/contents/**', async (route) => {
+    const request = route.request();
+    repositoryRequests.push(request.method());
+
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ headers: corsHeaders, status: 204 });
+      return;
+    }
+
+    if (request.method() === 'GET') {
+      await route.fulfill({
+        body: JSON.stringify({ message: 'Not Found' }),
+        contentType: 'application/json',
+        headers: corsHeaders,
+        status: 404
+      });
+      return;
+    }
+
+    if (request.method() === 'PUT') {
+      expect(request.headers().authorization).toBe('Bearer credential-value');
+      expect(request.postDataJSON()).toEqual(expect.objectContaining({
+        branch: 'main',
+        message: 'Add study document: 브라우저 검증 노트'
+      }));
+
+      await route.fulfill({
+        body: JSON.stringify({
+          commit: {
+            html_url: 'https://github.com/unikal1/Luddite-Study/commit/abc123',
+            sha: 'abc123'
+          },
+          content: {
+            path: '자료/alice/browser-check.md',
+            sha: 'file123'
+          }
+        }),
+        contentType: 'application/json',
+        headers: corsHeaders,
+        status: 200
+      });
+      return;
+    }
+
+    await route.fulfill({ body: JSON.stringify({ message: 'Unexpected method' }), contentType: 'application/json', headers: corsHeaders, status: 405 });
+  });
+  await page.getByLabel('GitHub 쓰기 인증값').fill('credential-value');
+  await page.getByRole('button', { name: '저장소에 저장' }).click();
+  await expect(page.getByText('저장소에 반영됐습니다. GitHub Pages는 보통 1-2분 뒤 새 빌드로 갱신됩니다.')).toBeVisible();
+  expect(repositoryRequests).toEqual(expect.arrayContaining(['GET', 'PUT']));
+
   await page.reload();
   await expect(page.getByLabel('제목')).toHaveValue('브라우저 검증 노트');
   await expect(page.getByLabel('파일명')).toHaveValue('browser-check');
