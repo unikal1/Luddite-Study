@@ -9,11 +9,7 @@ max_rows = 1000
 [auth]
 enabled = true
 site_url = "https://unikal1.github.io/Luddite-Study/"
-additional_redirect_urls = [
-  "http://localhost:5173/Luddite-Study/",
-  "http://127.0.0.1:5173/Luddite-Study/",
-  "http://127.0.0.1:4173/Luddite-Study/"
-]
+additional_redirect_urls = []
 
 [storage]
 enabled = true
