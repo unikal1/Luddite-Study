@@ -1,9 +1,9 @@
 import { getAuthRedirectUrl } from './authRedirect';
 
 describe('getAuthRedirectUrl', () => {
-  it('uses the app base URL without the current route state', () => {
+  it('uses the deployed GitHub Pages URL without the current route state', () => {
     window.history.replaceState(null, '', '/Luddite-Study/?demo=1#operations');
 
-    expect(getAuthRedirectUrl()).toBe('http://localhost:3000/Luddite-Study/');
+    expect(getAuthRedirectUrl()).toBe('https://unikal1.github.io/Luddite-Study/');
   });
 });

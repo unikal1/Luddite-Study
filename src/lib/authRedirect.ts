@@ -1,3 +1,5 @@
+const defaultAuthRedirectUrl = 'https://unikal1.github.io/Luddite-Study/';
+
 export function getAuthRedirectUrl(): string {
-  return new URL(import.meta.env.BASE_URL, window.location.origin).toString();
+  return import.meta.env.VITE_AUTH_REDIRECT_URL ?? defaultAuthRedirectUrl;
 }
