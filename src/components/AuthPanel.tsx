@@ -1,5 +1,6 @@
 import { Github, KeyRound, LogIn, UserPlus } from 'lucide-react';
 import { useState } from 'react';
+import { getAuthRedirectUrl } from '../lib/authRedirect';
 import { supabase } from '../lib/supabase';
 
 type AuthPanelProps = {
@@ -34,7 +35,7 @@ export function AuthPanel({ onDemo }: AuthPanelProps) {
         setStatus('회원가입 요청이 처리됐습니다. 이메일 확인이 켜져 있으면 메일 확인 후 로그인하세요.');
       } else {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.href
+          redirectTo: getAuthRedirectUrl()
         });
         if (error) throw error;
         setStatus('비밀번호 재설정 메일을 보냈습니다.');
@@ -54,7 +55,7 @@ export function AuthPanel({ onDemo }: AuthPanelProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: window.location.href
+          redirectTo: getAuthRedirectUrl()
         }
       });
       if (error) throw error;
