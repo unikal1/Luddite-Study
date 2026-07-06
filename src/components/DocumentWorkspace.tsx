@@ -1,6 +1,7 @@
 ﻿import { Check, FilePlus2, FolderPlus, ImagePlus, Pencil, Search, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from 'react';
-import type { DocumentDraft, DocumentFolder, DocumentKind, FolderDraft, StudyData, StudyDocument, StudyMember, StudySession } from '../types';
+import { FileText, Folder } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type RefObject } from 'react';
+import type { DocumentDraft, DocumentFolder, DocumentKind, FolderDraft, FolderUpdateDraft, StudyData, StudyDocument, StudyMember, StudySession } from '../types';
 import { formatDate } from '../utils/dates';
 import { slugifyFileName } from '../utils/path';
 import { MarkdownView } from './MarkdownView';
@@ -14,6 +15,7 @@ type DocumentWorkspaceProps = {
   onSaveDocument: (draft: DocumentDraft) => Promise<StudyDocument>;
   onDeleteDocument: (documentId: string) => Promise<void>;
   onCreateFolder: (draft: FolderDraft) => Promise<DocumentFolder>;
+  onUpdateFolder: (draft: FolderUpdateDraft) => Promise<DocumentFolder>;
   onUploadImage: (documentId: string, file: File) => Promise<string>;
 };
 
@@ -27,6 +29,7 @@ export function DocumentWorkspace({
   onSaveDocument,
   onDeleteDocument,
   onCreateFolder,
+  onUpdateFolder,
   onUploadImage
 }: DocumentWorkspaceProps) {
   const sessions = data.sessions.slice().sort((left, right) => left.week - right.week);
@@ -37,10 +40,11 @@ export function DocumentWorkspace({
   const [selectedFolderPath, setSelectedFolderPath] = useState('');
   const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState('');
-  const [folderDraft, setFolderDraft] = useState('');
   const [parentPath, setParentPath] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [renamingFolderPath, setRenamingFolderPath] = useState('');
+  const [folderNameDraft, setFolderNameDraft] = useState('');
+  const [draggedItem, setDraggedItem] = useState<DragTreeItem | null>(null);
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const visibleDocs = useMemo(() => {
@@ -93,8 +97,7 @@ export function DocumentWorkspace({
     const nextDraft = createDraft(kind, currentMember, session, ownerMemberId, basePath);
     setDraft(nextDraft);
     setEditing(true);
-    setCreateOpen(false);
-    setCreatingFolder(false);
+    setRenamingFolderPath('');
     setStatus('');
   }
 
@@ -135,7 +138,8 @@ export function DocumentWorkspace({
   }
 
   async function createFolder() {
-    const cleanName = slugifyFileName(folderDraft);
+    const folderName = '새로운 폴더';
+    const cleanName = uniqueFolderSegment('새로운-폴더', parentPath || defaultFolderBase(kind, currentMember, sessions.find((session) => session.id === sessionId) ?? null), visibleFolders);
     const base = parentPath || defaultFolderBase(kind, currentMember, sessions.find((session) => session.id === sessionId) ?? null);
     const path = `${base}/${cleanName}`.replace(/\/+/g, '/');
     const session = sessions.find((item) => item.id === sessionId) ?? null;
@@ -143,23 +147,68 @@ export function DocumentWorkspace({
     setStatus('폴더를 만드는 중입니다.');
 
     try {
-      await onCreateFolder({
+      const created = await onCreateFolder({
         kind,
         path,
-        name: cleanName,
+        name: folderName,
         parentPath: base,
         ownerMemberId: kind === 'material' ? currentMember?.id ?? null : draft.ownerMemberId ?? currentMember?.id ?? null,
         sessionId: kind === 'presentation' ? session?.id ?? null : null
       });
-      setFolderDraft('');
-      setParentPath(path);
-      setSelectedFolderPath(path);
-      setCreateOpen(false);
-      setCreatingFolder(false);
+      setParentPath(created.path);
+      setSelectedFolderPath(created.path);
+      setRenamingFolderPath(created.path);
+      setFolderNameDraft(created.name);
       setStatus('폴더가 만들어졌습니다.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '폴더 생성에 실패했습니다.');
     }
+  }
+
+  async function renameFolder(folderPath: string, nextName: string) {
+    const folder = visibleFolders.find((item) => item.path === folderPath);
+    const trimmed = nextName.trim();
+
+    if (!folder || !trimmed) {
+      setRenamingFolderPath('');
+      return;
+    }
+
+    const base = folder.parentPath ?? folder.path.split('/').slice(0, -1).join('/');
+    const nextSegment = uniqueFolderSegment(slugifyFileName(trimmed), base, visibleFolders, folder.id);
+    const nextPath = `${base}/${nextSegment}`.replace(/\/+/g, '/');
+
+    if (folder.name === trimmed && folder.path === nextPath) {
+      setRenamingFolderPath('');
+      return;
+    }
+
+    setStatus('폴더 이름을 바꾸는 중입니다.');
+
+    try {
+      const updated = await onUpdateFolder({
+        id: folder.id,
+        previousPath: folder.path,
+        kind: folder.kind,
+        path: nextPath,
+        name: trimmed,
+        parentPath: base,
+        ownerMemberId: folder.ownerMemberId,
+        sessionId: folder.sessionId
+      });
+      setParentPath(updated.path);
+      setSelectedFolderPath(updated.path);
+      setRenamingFolderPath('');
+      setStatus('폴더 이름을 바꿨습니다.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '폴더 이름 변경에 실패했습니다.');
+    }
+  }
+
+  function startRenameFolder(folder: FolderTreeItem) {
+    setRenamingFolderPath(folder.path);
+    setFolderNameDraft(folder.name);
+    setSelectedFolderPath(folder.path);
   }
 
   async function handleDrop(event: DragEvent<HTMLTextAreaElement>) {
@@ -206,6 +255,116 @@ export function DocumentWorkspace({
     setDraft((current) => ({ ...current, body: next }));
   }
 
+  function handleTreeItemKeyDown(event: KeyboardEvent, action: () => void) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      action();
+    }
+  }
+
+  function handleTreeDragStart(event: DragEvent<HTMLElement>, item: DragTreeItem) {
+    setDraggedItem(item);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/x-luddite-tree-item', JSON.stringify(item));
+  }
+
+  function handleTreeDragEnd() {
+    setDraggedItem(null);
+    setDropTargetPath(null);
+  }
+
+  function allowTreeDrop(event: DragEvent<HTMLElement>, targetPath: string) {
+    if (!canWrite) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetPath(targetPath);
+  }
+
+  async function dropTreeItem(event: DragEvent<HTMLElement>, targetPath: string) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const item = draggedItem ?? parseDraggedItem(event);
+    setDraggedItem(null);
+    setDropTargetPath(null);
+
+    if (!item || !canWrite) {
+      return;
+    }
+
+    if (item.type === 'doc') {
+      const doc = visibleDocs.find((document) => document.id === item.id);
+      if (doc) {
+        await moveDocumentToFolder(doc, targetPath);
+      }
+      return;
+    }
+
+    await moveFolderToFolder(item.path, targetPath);
+  }
+
+  async function moveDocumentToFolder(doc: StudyDocument, targetPath: string) {
+    const base = targetPath || defaultFolderBase(kind, currentMember, sessions.find((session) => session.id === sessionId) ?? null);
+    const fileName = doc.path.split('/').at(-1) ?? `${slugifyFileName(doc.title)}.md`;
+    const nextPath = uniqueDocumentPath(`${base}/${fileName}`, data.documents.filter((item) => item.id !== doc.id));
+
+    if (nextPath === doc.path) {
+      return;
+    }
+
+    setStatus('문서를 이동하는 중입니다.');
+
+    try {
+      const saved = await onSaveDocument({ ...fromDocument(doc), path: nextPath });
+      setSelectedId(saved.id);
+      setSelectedFolderPath('');
+      setParentPath(base);
+      setStatus('문서를 이동했습니다.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '문서 이동에 실패했습니다.');
+    }
+  }
+
+  async function moveFolderToFolder(sourcePath: string, targetPath: string) {
+    const folder = visibleFolders.find((item) => item.path === sourcePath);
+
+    if (!folder) {
+      return;
+    }
+
+    const base = targetPath || defaultFolderBase(kind, currentMember, sessions.find((session) => session.id === sessionId) ?? null);
+
+    if (base === folder.path || base.startsWith(`${folder.path}/`) || base === folder.parentPath) {
+      return;
+    }
+
+    const nextSegment = uniqueFolderSegment(slugifyFileName(folder.name), base, visibleFolders, folder.id);
+    const nextPath = `${base}/${nextSegment}`.replace(/\/+/g, '/');
+
+    setStatus('폴더를 이동하는 중입니다.');
+
+    try {
+      const updated = await onUpdateFolder({
+        id: folder.id,
+        previousPath: folder.path,
+        kind: folder.kind,
+        path: nextPath,
+        name: folder.name,
+        parentPath: base,
+        ownerMemberId: folder.ownerMemberId,
+        sessionId: folder.sessionId
+      });
+      setSelectedFolderPath(updated.path);
+      setParentPath(updated.path);
+      setStatus('폴더를 이동했습니다.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '폴더 이동에 실패했습니다.');
+    }
+  }
+
   const title = kind === 'material' ? '자료' : '발표';
   const selectedSession = sessions.find((session) => session.id === sessionId) ?? null;
 
@@ -218,43 +377,16 @@ export function DocumentWorkspace({
             <h1>{kind === 'material' ? '자료실' : '발표실'}</h1>
           </div>
           {canWrite ? (
-            <button className="icon-button rail-add-button" type="button" onClick={() => {
-              setCreateOpen((open) => !open);
-              setCreatingFolder(false);
-            }} aria-label={`${title} 만들기`} aria-expanded={createOpen}>
-              +
-            </button>
-          ) : null}
-        </div>
-
-        {canWrite && createOpen ? (
-          <div className="create-menu">
-            <div className="create-menu-row">
-              <button className="create-option" type="button" onClick={() => startNewDocument(undefined, parentPath || undefined)}>
-                <FilePlus2 size={16} aria-hidden="true" />
-                문서
+            <div className="rail-actions">
+              <button className="icon-button rail-add-button" type="button" onClick={() => startNewDocument(undefined, parentPath || undefined)} aria-label={`${title} 파일 추가`}>
+                <FilePlus2 size={18} aria-hidden="true" />
               </button>
-              <button className={creatingFolder ? 'create-option create-option--active' : 'create-option'} type="button" onClick={() => setCreatingFolder((open) => !open)}>
-                <FolderPlus size={16} aria-hidden="true" />
-                폴더
+              <button className="icon-button rail-add-button" type="button" onClick={() => void createFolder()} aria-label={`${title} 폴더 추가`}>
+                <FolderPlus size={18} aria-hidden="true" />
               </button>
             </div>
-            {creatingFolder ? (
-              <div className="folder-inline">
-                <input value={folderDraft} onChange={(event) => setFolderDraft(event.target.value)} placeholder="새 폴더" aria-label="새 폴더 이름" />
-                <button className="icon-button" type="button" onClick={() => void createFolder()} disabled={!folderDraft.trim()} aria-label="폴더 만들기">
-                  <Check size={18} aria-hidden="true" />
-                </button>
-                <select value={parentPath} onChange={(event) => setParentPath(event.target.value)} aria-label="부모 경로">
-                  <option value="">{defaultFolderLabel(kind)}</option>
-                  {folderItems(kind, visibleFolders).map((folder) => (
-                    <option key={folder.path} value={folder.path}>{folder.label}</option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
         {kind === 'presentation' ? (
           <label className="compact-label">
@@ -275,27 +407,104 @@ export function DocumentWorkspace({
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목, 태그" />
         </label>
 
-        <div className="tree-list workspace-tree">
+        <div
+          className={dropTargetPath === '' ? 'tree-list workspace-tree workspace-tree--drop-target' : 'tree-list workspace-tree'}
+          onDragOver={(event) => allowTreeDrop(event, '')}
+          onDrop={(event) => void dropTreeItem(event, '')}
+          onDragLeave={() => setDropTargetPath(null)}
+        >
           {buildTreeItems(kind, visibleFolders, visibleDocs).map((item) => (
             item.type === 'folder' ? (
-              <button className={item.path === selectedFolderPath ? 'tree-item tree-item--folder tree-item--active' : 'tree-item tree-item--folder'} key={`folder-${item.path}`} type="button" title={item.name} onClick={() => {
-                setParentPath(item.path);
-                setSelectedFolderPath(item.path);
-                setSelectedId('');
-                setEditing(false);
-                setCreateOpen(true);
-                setCreatingFolder(false);
-              }}>
-                <span className="tree-item-title" style={{ paddingLeft: `${item.depth * 14}px` }}>{item.name}</span>
-              </button>
+              <div
+                aria-label={item.name}
+                className={[
+                  'tree-item',
+                  'tree-item--folder',
+                  item.path === selectedFolderPath ? 'tree-item--active' : '',
+                  dropTargetPath === item.path ? 'tree-item--drop-target' : ''
+                ].filter(Boolean).join(' ')}
+                draggable={canWrite}
+                key={`folder-${item.path}`}
+                role="button"
+                tabIndex={0}
+                title={item.name}
+                onClick={() => {
+                  setParentPath(item.path);
+                  setSelectedFolderPath(item.path);
+                  setSelectedId('');
+                  setEditing(false);
+                }}
+                onDoubleClick={() => startRenameFolder(item)}
+                onDragEnd={handleTreeDragEnd}
+                onDragOver={(event) => allowTreeDrop(event, item.path)}
+                onDragStart={(event) => handleTreeDragStart(event, { type: 'folder', path: item.path })}
+                onDrop={(event) => void dropTreeItem(event, item.path)}
+                onKeyDown={(event) => {
+                  if (event.key === 'F2') {
+                    event.preventDefault();
+                    startRenameFolder(item);
+                    return;
+                  }
+
+                  handleTreeItemKeyDown(event, () => {
+                    setParentPath(item.path);
+                    setSelectedFolderPath(item.path);
+                    setSelectedId('');
+                    setEditing(false);
+                  });
+                }}
+              >
+                <Folder className="tree-item-icon" size={16} aria-hidden="true" style={{ marginLeft: `${item.depth * 14}px` }} />
+                {renamingFolderPath === item.path ? (
+                  <input
+                    className="tree-rename-input"
+                    value={folderNameDraft}
+                    autoFocus
+                    onBlur={() => void renameFolder(item.path, folderNameDraft)}
+                    onChange={(event) => setFolderNameDraft(event.target.value)}
+                    onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }
+
+                      if (event.key === 'Escape') {
+                        event.preventDefault();
+                        setRenamingFolderPath('');
+                      }
+                    }}
+                  />
+                ) : (
+                  <span className="tree-item-title">{item.name}</span>
+                )}
+              </div>
             ) : (
-              <button className={item.doc.id === selected?.id ? 'tree-item tree-item--active' : 'tree-item'} key={item.doc.id} type="button" title={item.doc.title} onClick={() => {
-                setSelectedId(item.doc.id);
-                setSelectedFolderPath('');
-                setEditing(false);
-              }}>
-                <span className="tree-item-title" style={{ paddingLeft: `${item.depth * 14}px` }}>{item.doc.title}</span>
-              </button>
+              <div
+                aria-label={item.doc.title}
+                className={item.doc.id === selected?.id ? 'tree-item tree-item--active' : 'tree-item'}
+                draggable={canWrite}
+                key={item.doc.id}
+                role="button"
+                tabIndex={0}
+                title={item.doc.title}
+                onClick={() => {
+                  setSelectedId(item.doc.id);
+                  setSelectedFolderPath('');
+                  setEditing(false);
+                }}
+                onDragEnd={handleTreeDragEnd}
+                onDragStart={(event) => handleTreeDragStart(event, { type: 'doc', id: item.doc.id })}
+                onKeyDown={(event) => handleTreeItemKeyDown(event, () => {
+                  setSelectedId(item.doc.id);
+                  setSelectedFolderPath('');
+                  setEditing(false);
+                })}
+              >
+                <FileText className="tree-item-icon" size={16} aria-hidden="true" style={{ marginLeft: `${item.depth * 14}px` }} />
+                <span className="tree-item-title">{item.doc.title}</span>
+              </div>
             )
           ))}
         </div>
@@ -325,6 +534,7 @@ export function DocumentWorkspace({
             <DocumentReader
               canWrite={canWrite}
               doc={selected}
+              member={data.members.find((member) => member.id === selected.ownerMemberId) ?? null}
               session={data.sessions.find((session) => session.id === selected.sessionId) ?? null}
               status={status}
               onDelete={() => void removeSelected()}
@@ -334,6 +544,7 @@ export function DocumentWorkspace({
             <div className="empty-state">
               <h2 id="reader-title">{selectedFolderPath ? '폴더 선택됨' : '문서 없음'}</h2>
               <p>{selectedFolderPath ? '상단의 + 버튼에서 이 폴더에 문서를 만들 수 있습니다.' : '왼쪽에서 문서를 선택하거나 새 문서를 만드세요.'}</p>
+              {status ? <p className="form-status">{status}</p> : null}
             </div>
           )}
         </section>
@@ -345,6 +556,7 @@ export function DocumentWorkspace({
 function DocumentReader({
   canWrite,
   doc,
+  member,
   session,
   status,
   onDelete,
@@ -352,6 +564,7 @@ function DocumentReader({
 }: {
   canWrite: boolean;
   doc: StudyDocument;
+  member: StudyMember | null;
   session: StudySession | null;
   status: string;
   onDelete: () => void;
@@ -362,6 +575,7 @@ function DocumentReader({
       <div className="reader-toolbar">
         <div>
           <div className="breadcrumb">{doc.kind === 'presentation' && session ? `${session.week}회차 발표` : '자료'}</div>
+          <div className="reader-author">작성자 {member?.displayName ?? '공유'}</div>
           <h2 id="reader-title">{doc.title}</h2>
           <div className="meta-row">
             {session ? <span>{session.week}회차</span> : null}
@@ -483,6 +697,9 @@ function DocumentEditor({
 
 type FolderTreeItem = { type: 'folder'; path: string; name: string; label: string; depth: number };
 type TreeItem = FolderTreeItem | { type: 'doc'; doc: StudyDocument; depth: number };
+type DragTreeItem =
+  | { type: 'folder'; path: string }
+  | { type: 'doc'; id: string };
 
 function buildTreeItems(
   kind: DocumentKind,
@@ -511,7 +728,7 @@ function folderItems(kind: DocumentKind, folders: DocumentFolder[]): FolderTreeI
       return {
         type: 'folder' as const,
         path: folder.path,
-        name: parts.at(-1) ?? folder.name,
+        name: folder.name || parts.at(-1) || '폴더',
         label: parts.join(' / '),
         depth: Math.max(0, parts.length - 1)
       };
@@ -531,8 +748,23 @@ function visiblePathParts(kind: DocumentKind, path: string): string[] {
   return parts.slice(hiddenPrefixLength);
 }
 
-function defaultFolderLabel(kind: DocumentKind): string {
-  return kind === 'presentation' ? '현재 회차' : '내 자료';
+function parseDraggedItem(event: DragEvent<HTMLElement>): DragTreeItem | null {
+  const raw = event.dataTransfer.getData('application/x-luddite-tree-item');
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as DragTreeItem;
+    if (parsed.type === 'folder' || parsed.type === 'doc') {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function prepareDraftForSave(draft: DocumentDraft, documents: StudyDocument[]): DocumentDraft {
@@ -557,6 +789,19 @@ function uniqueDocumentPath(path: string, documents: StudyDocument[]): string {
 
   while (documents.some((doc) => doc.path === candidate)) {
     candidate = `${withoutExtension}-${index}.md`;
+    index += 1;
+  }
+
+  return candidate;
+}
+
+function uniqueFolderSegment(segment: string, parentPath: string, folders: DocumentFolder[], ignoreId?: string): string {
+  const normalized = slugifyFileName(segment);
+  let candidate = normalized;
+  let index = 2;
+
+  while (folders.some((folder) => folder.id !== ignoreId && folder.path === `${parentPath}/${candidate}`.replace(/\/+/g, '/'))) {
+    candidate = `${normalized}-${index}`;
     index += 1;
   }
 

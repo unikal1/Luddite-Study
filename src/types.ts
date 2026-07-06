@@ -163,6 +163,11 @@ export type FolderDraft = {
   sessionId: number | null;
 };
 
+export type FolderUpdateDraft = FolderDraft & {
+  id: string;
+  previousPath: string;
+};
+
 export type MemberDraft = {
   memberUid: string;
   displayName: string;

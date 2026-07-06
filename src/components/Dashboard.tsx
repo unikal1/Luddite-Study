@@ -46,11 +46,23 @@ export function Dashboard({ data, onNavigate }: DashboardProps) {
         </div>
       </section>
 
-      <section className="summary-strip" aria-label="핵심 상태">
-        <SummaryItem label="회차" value={`${currentSession.week}회차`} />
-        <SummaryItem label="범위" value={formatDateRange(currentSession.startsOn, currentSession.endsOn)} />
-        <SummaryItem label="발표일" value={formatDate(currentSession.presentationOn)} />
-        <SummaryItem label="참여자" value={`${activeMembers.length}명`} />
+      <section className="session-facts" aria-label="핵심 상태">
+        <div>
+          <span>회차</span>
+          <strong>{currentSession.week}회차</strong>
+        </div>
+        <div>
+          <span>범위</span>
+          <strong>{formatDateRange(currentSession.startsOn, currentSession.endsOn)}</strong>
+        </div>
+        <div>
+          <span>발표일</span>
+          <strong>{formatDate(currentSession.presentationOn)}</strong>
+        </div>
+        <div>
+          <span>참여자</span>
+          <strong>{activeMembers.length}명</strong>
+        </div>
       </section>
 
       <div className="dashboard-focus">
@@ -110,15 +122,6 @@ export function Dashboard({ data, onNavigate }: DashboardProps) {
         </div>
       </section>
     </div>
-  );
-}
-
-function SummaryItem({ label, value }: { label: string; value: string }) {
-  return (
-    <article className="summary-item">
-      <b>{value}</b>
-      <small>{label}</small>
-    </article>
   );
 }
 

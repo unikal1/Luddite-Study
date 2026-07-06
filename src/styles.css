@@ -313,13 +313,34 @@ h3 {
   padding: 0 10px;
 }
 
-.summary-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+.session-facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 0 18px;
 }
 
-.summary-item,
+.session-facts div {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session-facts span {
+  color: var(--subtle);
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.session-facts strong {
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 820;
+}
+
 .panel,
 .tool-panel,
 .editor-panel,
@@ -332,26 +353,6 @@ h3 {
   box-shadow: var(--shadow);
 }
 
-.summary-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 64px;
-  padding: 12px 14px;
-}
-
-.summary-item > span {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 8px;
-  background: #edf2ff;
-  color: var(--violet);
-}
-
-.summary-item small,
 .split-line span,
 .timeline-item span,
 .penalty-item span,
@@ -359,15 +360,6 @@ h3 {
 .doc-card p {
   color: var(--muted);
   font-size: 0.86rem;
-}
-
-.summary-item b {
-  color: var(--text);
-  font-size: 1.1rem;
-}
-
-.summary-item small {
-  margin-left: auto;
 }
 
 .dashboard-focus {
@@ -602,7 +594,9 @@ h3 {
 
 .tree-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
   width: 100%;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -612,6 +606,7 @@ h3 {
   min-height: 34px;
   padding: 6px 8px;
   text-align: left;
+  user-select: none;
 }
 
 .tree-item span {
@@ -628,15 +623,39 @@ h3 {
   line-height: 1.35;
 }
 
+.tree-item-icon {
+  color: var(--subtle);
+  flex: 0 0 auto;
+}
+
 .tree-item--active,
 .tree-item:hover {
   border-color: var(--line);
   background: var(--surface-muted);
 }
 
+.tree-item--drop-target,
+.workspace-tree--drop-target {
+  border-color: var(--primary);
+  background: #e8fbf7;
+}
+
 .tree-item--folder .tree-item-title {
   color: #26364d;
   font-weight: 780;
+}
+
+.tree-rename-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 760;
+  padding: 0 7px;
 }
 
 .reader-toolbar {
@@ -657,6 +676,13 @@ h3 {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 0.8rem;
   overflow-wrap: anywhere;
+}
+
+.reader-author {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 760;
 }
 
 .doc-summary {
@@ -1228,7 +1254,6 @@ textarea {
 
 @media (max-width: 1180px) {
   .metric-grid,
-  .summary-strip,
   .recent-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1293,7 +1318,6 @@ textarea {
   }
 
   .metric-grid,
-  .summary-strip,
   .dashboard-layout,
   .dashboard-focus,
   .recent-grid,
@@ -1309,9 +1333,16 @@ textarea {
   .preview-panel,
   .reader-panel,
   .library-rail,
-  .metric-card,
-  .summary-item {
+  .metric-card {
     padding: 14px;
+  }
+
+  .session-facts {
+    gap: 10px 18px;
+  }
+
+  .session-facts div {
+    width: calc(50% - 9px);
   }
 
   .segmented-control {
@@ -1504,8 +1535,17 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.rail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .workspace-tree {
   gap: 6px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 8px;
 }
 
 .tree-item--folder {

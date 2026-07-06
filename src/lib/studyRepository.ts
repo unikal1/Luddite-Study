@@ -6,6 +6,7 @@ import type {
   DocumentDraft,
   DocumentFolder,
   FolderDraft,
+  FolderUpdateDraft,
   MemberDraft,
   MemberRole,
   Penalty,
@@ -304,6 +305,47 @@ export async function createFolder(draft: FolderDraft, currentMemberId: string):
   return mapFolder(data as DbFolder);
 }
 
+export async function updateFolder(
+  draft: FolderUpdateDraft,
+  currentMemberId: string,
+  folders: DocumentFolder[],
+  documents: StudyDocument[]
+): Promise<DocumentFolder> {
+  const nextPath = normalizeFolderPath(draft.path);
+  const previousPath = normalizeFolderPath(draft.previousPath);
+  const folderPayload = {
+    path: nextPath,
+    name: draft.name.trim() || draft.path.split('/').at(-1) || '새 폴더',
+    parent_path: draft.parentPath,
+    owner_member_id: draft.ownerMemberId,
+    session_id: draft.kind === 'presentation' ? draft.sessionId : null
+  };
+
+  const { data, error } = await supabase.from('document_folders').update(folderPayload).eq('id', draft.id).select('*').single();
+
+  if (error) {
+    throw error;
+  }
+
+  const movedFolders = folders.filter((folder) => folder.id !== draft.id && isChildPath(folder.path, previousPath));
+  const movedDocuments = documents.filter((document) => isChildPath(document.path, previousPath));
+
+  await Promise.all([
+    ...movedFolders.map((folder) => {
+      const path = replacePathPrefix(folder.path, previousPath, nextPath);
+      const parentPath = folder.parentPath ? replacePathPrefix(folder.parentPath, previousPath, nextPath) : null;
+
+      return assertMutation(supabase.from('document_folders').update({ path, parent_path: parentPath }).eq('id', folder.id));
+    }),
+    ...movedDocuments.map((document) => assertMutation(supabase.from('documents').update({
+      path: replacePathPrefix(document.path, previousPath, nextPath),
+      updated_by: currentMemberId
+    }).eq('id', document.id)))
+  ]);
+
+  return mapFolder(data as DbFolder);
+}
+
 export async function saveMember(draft: MemberDraft): Promise<StudyMember> {
   const memberUid = slugifyFileName(draft.memberUid);
   const payload = {
@@ -570,6 +612,18 @@ function normalizeDocumentPath(path: string): string {
 
 function normalizeFolderPath(path: string): string {
   return path.trim().replace(/^\/+/, '').replace(/\/+$/g, '').replace(/\/+/g, '/');
+}
+
+function isChildPath(path: string, parentPath: string): boolean {
+  return path.startsWith(`${parentPath}/`);
+}
+
+function replacePathPrefix(path: string, previousPrefix: string, nextPrefix: string): string {
+  if (path === previousPrefix) {
+    return nextPrefix;
+  }
+
+  return path.startsWith(`${previousPrefix}/`) ? `${nextPrefix}${path.slice(previousPrefix.length)}` : path;
 }
 
 function roleLabel(role: MemberRole): string {

@@ -17,10 +17,11 @@ import {
   saveDocument,
   saveMember,
   saveSession,
+  updateFolder,
   uploadDocumentImage
 } from './lib/studyRepository';
 import { supabase } from './lib/supabase';
-import type { DocumentDraft, DocumentFolder, FolderDraft, MemberDraft, RouteKey, SessionDraft, StudyData, StudyDocument, StudyMember, StudySession } from './types';
+import type { DocumentDraft, DocumentFolder, FolderDraft, FolderUpdateDraft, MemberDraft, RouteKey, SessionDraft, StudyData, StudyDocument, StudyMember, StudySession } from './types';
 
 const routes: Array<{ key: RouteKey; label: string; icon: React.ReactNode }> = [
   { key: 'dashboard', label: '대시보드', icon: <Gauge size={18} /> },
@@ -168,6 +169,20 @@ export default function App() {
     }
 
     const folder = await createFolder(draft, currentMember.id);
+    await refresh();
+    return folder;
+  }
+
+  async function handleUpdateFolder(draft: FolderUpdateDraft): Promise<DocumentFolder> {
+    if (demoMode) {
+      return mutateDemoFolderUpdate(draft);
+    }
+
+    if (!currentMember || !data) {
+      throw new Error('활성 멤버만 폴더를 수정할 수 있습니다.');
+    }
+
+    const folder = await updateFolder(draft, currentMember.id, data.folders, data.documents);
     await refresh();
     return folder;
   }
@@ -345,6 +360,7 @@ export default function App() {
             kind="material"
             onCreateFolder={handleCreateFolder}
             onDeleteDocument={handleDeleteDocument}
+            onUpdateFolder={handleUpdateFolder}
             onSaveDocument={handleSaveDocument}
             onUploadImage={handleUploadImage}
           />
@@ -357,6 +373,7 @@ export default function App() {
             kind="presentation"
             onCreateFolder={handleCreateFolder}
             onDeleteDocument={handleDeleteDocument}
+            onUpdateFolder={handleUpdateFolder}
             onSaveDocument={handleSaveDocument}
             onUploadImage={handleUploadImage}
           />
@@ -419,6 +436,54 @@ export default function App() {
       updatedAt: now
     };
     setData((current) => current ? { ...current, folders: [...current.folders, folder] } : current);
+    return folder;
+  }
+
+  function mutateDemoFolderUpdate(draft: FolderUpdateDraft): DocumentFolder {
+    const now = new Date().toISOString();
+    const folder: DocumentFolder = {
+      id: draft.id,
+      kind: draft.kind,
+      path: draft.path,
+      name: draft.name,
+      parentPath: draft.parentPath,
+      ownerMemberId: draft.ownerMemberId,
+      sessionId: draft.sessionId,
+      createdBy: currentMember?.id ?? null,
+      createdAt: data?.folders.find((item) => item.id === draft.id)?.createdAt ?? now,
+      updatedAt: now
+    };
+    const previousPrefix = `${draft.previousPath}/`;
+
+    setData((current) => current ? {
+      ...current,
+      folders: current.folders.map((item) => {
+        if (item.id === draft.id) {
+          return folder;
+        }
+
+        if (!item.path.startsWith(previousPrefix)) {
+          return item;
+        }
+
+        return {
+          ...item,
+          path: `${draft.path}${item.path.slice(draft.previousPath.length)}`,
+          parentPath: item.parentPath === draft.previousPath
+            ? draft.path
+            : item.parentPath?.startsWith(previousPrefix)
+              ? `${draft.path}${item.parentPath.slice(draft.previousPath.length)}`
+              : item.parentPath,
+          updatedAt: now
+        };
+      }),
+      documents: current.documents.map((item) => item.path.startsWith(previousPrefix) ? {
+        ...item,
+        path: `${draft.path}${item.path.slice(draft.previousPath.length)}`,
+        updatedAt: now
+      } : item)
+    } : current);
+
     return folder;
   }
 
