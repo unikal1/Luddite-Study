@@ -19,7 +19,8 @@ export function AuthPanel({ onDemo }: AuthPanelProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: getAuthRedirectUrl()
+          redirectTo: getAuthRedirectUrl(),
+          scopes: 'read:user user:email'
         }
       });
       if (error) throw error;

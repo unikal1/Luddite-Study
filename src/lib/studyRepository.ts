@@ -141,7 +141,24 @@ type DbAttachment = {
   created_at: string;
 };
 
+type AccessContext = {
+  current_member_id: string | null;
+  is_active_member: boolean;
+  can_manage_study: boolean;
+  bootstrap_open: boolean;
+};
+
 export async function loadStudyData(authSession: Session | null): Promise<StudyData> {
+  if (authSession) {
+    await claimStudyMember();
+  }
+
+  const accessContext = await getStudyAccessContext();
+
+  if (!accessContext.is_active_member && !accessContext.bootstrap_open) {
+    return emptyStudyData(false);
+  }
+
   const [
     members,
     sessions,
@@ -163,7 +180,9 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
   ]);
 
   const mappedMembers = members.map(mapMember);
-  const currentMember = mappedMembers.find((member) => member.profileId === authSession?.user.id) ?? null;
+  const currentMember = mappedMembers.find((member) => member.id === accessContext.current_member_id)
+    ?? mappedMembers.find((member) => member.profileId === authSession?.user.id)
+    ?? null;
 
   return {
     members: mappedMembers,
@@ -175,7 +194,40 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
     activityEvents: activityEvents.map(mapEvent),
     attachments: attachments.map(mapAttachment),
     currentMember,
-    bootstrapOpen: !mappedMembers.some((member) => member.active && member.profileId && (member.role === 'owner' || member.role === 'admin'))
+    bootstrapOpen: accessContext.bootstrap_open
+  };
+}
+
+async function claimStudyMember(): Promise<void> {
+  const { error } = await supabase.rpc('claim_study_member');
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function getStudyAccessContext(): Promise<AccessContext> {
+  const { data, error } = await supabase.rpc('get_study_access_context').single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as AccessContext;
+}
+
+function emptyStudyData(bootstrapOpen: boolean): StudyData {
+  return {
+    members: [],
+    sessions: [],
+    folders: [],
+    documents: [],
+    progressTopics: [],
+    penalties: [],
+    activityEvents: [],
+    attachments: [],
+    currentMember: null,
+    bootstrapOpen
   };
 }
 

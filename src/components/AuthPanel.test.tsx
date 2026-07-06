@@ -43,7 +43,8 @@ describe('AuthPanel', () => {
       expect(signInWithOAuth).toHaveBeenCalledWith({
         provider: 'github',
         options: {
-          redirectTo: 'https://unikal1.github.io/Luddite-Study/'
+          redirectTo: 'https://unikal1.github.io/Luddite-Study/',
+          scopes: 'read:user user:email'
         }
       });
     });

@@ -302,6 +302,10 @@ export default function App() {
     return <BootstrapPanel session={authSession} onCreateOwner={handleCreateOwner} />;
   }
 
+  if (!demoMode && authSession && !data.bootstrapOpen && !data.currentMember) {
+    return <AccessDeniedPanel identifier={authSession.user.user_metadata?.user_name ?? authSession.user.email ?? '현재 GitHub 계정'} onSignOut={handleSignOut} />;
+  }
+
   return (
     <div className="app-shell">
       <header className="top-nav">
@@ -424,6 +428,27 @@ export default function App() {
       sessions: current.sessions.map((session) => session.id === draft.id ? demoSessionFromDraft(draft, current.currentMember, session) : session)
     } : current);
   }
+}
+
+function AccessDeniedPanel({ identifier, onSignOut }: { identifier: string; onSignOut: () => Promise<void> }) {
+  return (
+    <main className="auth-page">
+      <section className="auth-panel" aria-labelledby="access-denied-title">
+        <div className="section-heading">
+          <LogOut size={20} aria-hidden="true" />
+          <h1 id="access-denied-title">승인된 멤버가 아닙니다</h1>
+        </div>
+        <p className="lead">
+          {identifier} 계정은 아직 이 스터디 멤버로 등록되어 있지 않습니다.
+          운영자가 GitHub 사용자명을 멤버 목록에 추가한 뒤 다시 로그인하세요.
+        </p>
+        <button className="primary-button auth-wide-button" type="button" onClick={() => void onSignOut()}>
+          <LogOut size={18} aria-hidden="true" />
+          로그아웃
+        </button>
+      </section>
+    </main>
+  );
 }
 
 function readRoute(): RouteKey {
