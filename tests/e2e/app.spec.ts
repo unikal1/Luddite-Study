@@ -15,10 +15,10 @@ test('dashboard, document workspaces, and operations work on desktop', async ({ 
   await expect(page.getByRole('heading', { name: '스터디 운영 규칙', level: 2 })).toBeVisible();
   await expect(page.getByText('자료와 발표는 Supabase에 저장한다.')).toBeVisible();
 
-  await page.getByLabel('자료 작성').click();
+  await page.getByRole('button', { name: '자료 만들기' }).click();
+  await page.getByRole('button', { name: '문서', exact: true }).click();
   await page.getByLabel('제목').fill('브라우저 검증 노트');
   await page.getByLabel('요약').fill('Playwright로 작성 흐름을 확인한다.');
-  await page.getByRole('textbox', { name: '경로' }).fill('자료/alice/checks/browser-check.md');
   await page.getByLabel('Markdown').fill('# 검증\n\n- [x] 자료 저장\n- [ ] 이미지 첨부');
   await page.getByRole('button', { name: '저장' }).click();
   await expect(page.getByRole('heading', { name: '브라우저 검증 노트', level: 2 })).toBeVisible();
@@ -33,17 +33,19 @@ test('dashboard, document workspaces, and operations work on desktop', async ({ 
   await expect(page.getByText('이미지가 첨부됐습니다.')).toBeVisible();
   await expect(page.getByLabel('Markdown')).toHaveValue(/!\[diagram\.png]\(blob:/);
 
-  await page.getByLabel('새 폴더').fill('deep-folder');
-  await page.getByRole('button', { name: '추가' }).click();
+  await page.getByRole('button', { name: '자료 만들기' }).click();
+  await page.getByRole('button', { name: '폴더', exact: true }).click();
+  await page.getByLabel('새 폴더 이름').fill('deep-folder');
+  await page.getByRole('button', { name: '폴더 만들기' }).click();
   await expect(page.getByText('폴더가 만들어졌습니다.')).toBeVisible();
   await page.screenshot({ path: `test-results/${testInfo.project.name}-materials.png`, fullPage: true });
 
   await page.getByRole('button', { name: '발표', exact: true }).click();
   await expect(page.getByRole('heading', { name: '발표실' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'DevTools Performance 실습', level: 2 })).toBeVisible();
-  await page.getByLabel('발표 작성').click();
+  await page.getByRole('button', { name: '발표 만들기' }).click();
+  await page.getByRole('button', { name: '문서', exact: true }).click();
   await page.getByLabel('제목').fill('당일 발표 메모');
-  await page.getByRole('textbox', { name: '경로' }).fill('발표/3회차/alice/live-note.md');
   await page.getByLabel('Markdown').fill('# 당일 발표 메모\n\n추첨 후 발표자가 내용을 정리한다.');
   await page.getByRole('button', { name: '저장' }).click();
   await expect(page.getByRole('heading', { name: '당일 발표 메모', level: 2 })).toBeVisible();

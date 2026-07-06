@@ -23,7 +23,7 @@ npm run e2e
 
 - 사용자/멤버, 회차, 발표일, 자료/발표 Markdown, 진도, 벌칙, 활동 로그: Supabase Postgres
 - 이미지/첨부: Supabase Storage `study-attachments` 버킷
-- 인증: Supabase Auth, GitHub OAuth 또는 이메일/비밀번호
+- 인증: Supabase Auth, GitHub OAuth
 - 저장소: 앱 코드, 문서, Supabase migration/config만 보관
 
 자료와 발표 탭에서 폴더와 Markdown 문서를 직접 만들고 수정합니다. 발표 탭은 회차를 먼저 선택한 뒤 사람별 트리를 보여줍니다.

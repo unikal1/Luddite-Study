@@ -34,10 +34,13 @@ export function DocumentWorkspace({
   const [sessionId, setSessionId] = useState<number | null>(kind === 'presentation' ? defaultSessionId : null);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState('');
+  const [selectedFolderPath, setSelectedFolderPath] = useState('');
   const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState('');
   const [folderDraft, setFolderDraft] = useState('');
   const [parentPath, setParentPath] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creatingFolder, setCreatingFolder] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const visibleDocs = useMemo(() => {
@@ -59,7 +62,7 @@ export function DocumentWorkspace({
       .sort((left, right) => left.path.localeCompare(right.path, 'ko-KR'));
   }, [data.folders, kind, sessionId]);
 
-  const selected = visibleDocs.find((doc) => doc.id === selectedId) ?? visibleDocs[0] ?? null;
+  const selected = visibleDocs.find((doc) => doc.id === selectedId) ?? null;
   const [draft, setDraft] = useState<DocumentDraft>(() => createDraft(kind, currentMember, sessions.find((session) => session.id === defaultSessionId) ?? null));
 
   useEffect(() => {
@@ -68,10 +71,14 @@ export function DocumentWorkspace({
       return;
     }
 
+    if (selectedFolderPath) {
+      return;
+    }
+
     if (!visibleDocs.some((doc) => doc.id === selectedId)) {
       setSelectedId(visibleDocs[0].id);
     }
-  }, [selectedId, visibleDocs]);
+  }, [selectedFolderPath, selectedId, visibleDocs]);
 
   useEffect(() => {
     if (!editing || !selected) {
@@ -86,6 +93,8 @@ export function DocumentWorkspace({
     const nextDraft = createDraft(kind, currentMember, session, ownerMemberId, basePath);
     setDraft(nextDraft);
     setEditing(true);
+    setCreateOpen(false);
+    setCreatingFolder(false);
     setStatus('');
   }
 
@@ -100,8 +109,9 @@ export function DocumentWorkspace({
     setStatus('저장 중입니다.');
 
     try {
-      const saved = await onSaveDocument(draft);
+      const saved = await onSaveDocument(prepareDraftForSave(draft, data.documents));
       setSelectedId(saved.id);
+      setSelectedFolderPath('');
       setDraft(fromDocument(saved));
       setEditing(false);
       setStatus('저장됐습니다.');
@@ -143,6 +153,9 @@ export function DocumentWorkspace({
       });
       setFolderDraft('');
       setParentPath(path);
+      setSelectedFolderPath(path);
+      setCreateOpen(false);
+      setCreatingFolder(false);
       setStatus('폴더가 만들어졌습니다.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '폴더 생성에 실패했습니다.');
@@ -205,11 +218,43 @@ export function DocumentWorkspace({
             <h1>{kind === 'material' ? '자료실' : '발표실'}</h1>
           </div>
           {canWrite ? (
-            <button className="icon-button" type="button" onClick={() => startNewDocument()} aria-label={`${title} 작성`}>
-              <FilePlus2 size={18} aria-hidden="true" />
+            <button className="icon-button rail-add-button" type="button" onClick={() => {
+              setCreateOpen((open) => !open);
+              setCreatingFolder(false);
+            }} aria-label={`${title} 만들기`} aria-expanded={createOpen}>
+              +
             </button>
           ) : null}
         </div>
+
+        {canWrite && createOpen ? (
+          <div className="create-menu">
+            <div className="create-menu-row">
+              <button className="create-option" type="button" onClick={() => startNewDocument(undefined, parentPath || undefined)}>
+                <FilePlus2 size={16} aria-hidden="true" />
+                문서
+              </button>
+              <button className={creatingFolder ? 'create-option create-option--active' : 'create-option'} type="button" onClick={() => setCreatingFolder((open) => !open)}>
+                <FolderPlus size={16} aria-hidden="true" />
+                폴더
+              </button>
+            </div>
+            {creatingFolder ? (
+              <div className="folder-inline">
+                <input value={folderDraft} onChange={(event) => setFolderDraft(event.target.value)} placeholder="새 폴더" aria-label="새 폴더 이름" />
+                <button className="icon-button" type="button" onClick={() => void createFolder()} disabled={!folderDraft.trim()} aria-label="폴더 만들기">
+                  <Check size={18} aria-hidden="true" />
+                </button>
+                <select value={parentPath} onChange={(event) => setParentPath(event.target.value)} aria-label="부모 경로">
+                  <option value="">{defaultFolderLabel(kind)}</option>
+                  {folderItems(kind, visibleFolders).map((folder) => (
+                    <option key={folder.path} value={folder.path}>{folder.label}</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {kind === 'presentation' ? (
           <label className="compact-label">
@@ -227,55 +272,31 @@ export function DocumentWorkspace({
         <label className="search-box rail-search">
           <Search size={18} aria-hidden="true" />
           <span className="sr-only">검색</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목, 태그, 경로" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목, 태그" />
         </label>
 
-        {canWrite ? (
-          <div className="folder-create">
-            <label>
-              새 폴더
-              <input value={folderDraft} onChange={(event) => setFolderDraft(event.target.value)} placeholder="folder-name" />
-            </label>
-            <label>
-              부모 경로
-              <select value={parentPath} onChange={(event) => setParentPath(event.target.value)}>
-                <option value="">{defaultFolderBase(kind, currentMember, selectedSession)}</option>
-                {visibleFolders.map((folder) => (
-                  <option key={folder.id} value={folder.path}>{folder.path}</option>
-                ))}
-              </select>
-            </label>
-            <button className="secondary-button" type="button" onClick={() => void createFolder()} disabled={!folderDraft.trim()}>
-              <FolderPlus size={18} aria-hidden="true" />
-              추가
-            </button>
-          </div>
-        ) : null}
-
         <div className="tree-list workspace-tree">
-          {buildGroups(kind, data.members, visibleFolders, visibleDocs, selectedSession).map((group) => (
-            <div className="tree-group" key={group.label}>
-              <h2>{group.label}</h2>
-              {group.items.map((item) => (
-                item.type === 'folder' ? (
-                  <button className="tree-item tree-item--folder" key={`folder-${item.path}`} type="button" onClick={() => {
-                    setParentPath(item.path);
-                    startNewDocument(item.ownerMemberId, item.path);
-                  }}>
-                    <span>{indent(item.depth)}폴더 · {item.name}</span>
-                    <small>{item.path}</small>
-                  </button>
-                ) : (
-                  <button className={item.doc.id === selected?.id ? 'tree-item tree-item--active' : 'tree-item'} key={item.doc.id} type="button" onClick={() => {
-                    setSelectedId(item.doc.id);
-                    setEditing(false);
-                  }}>
-                    <span>{indent(item.depth)}{item.doc.title}</span>
-                    <small>{item.doc.path}</small>
-                  </button>
-                )
-              ))}
-            </div>
+          {buildTreeItems(kind, visibleFolders, visibleDocs).map((item) => (
+            item.type === 'folder' ? (
+              <button className={item.path === selectedFolderPath ? 'tree-item tree-item--folder tree-item--active' : 'tree-item tree-item--folder'} key={`folder-${item.path}`} type="button" title={item.name} onClick={() => {
+                setParentPath(item.path);
+                setSelectedFolderPath(item.path);
+                setSelectedId('');
+                setEditing(false);
+                setCreateOpen(true);
+                setCreatingFolder(false);
+              }}>
+                <span className="tree-item-title" style={{ paddingLeft: `${item.depth * 14}px` }}>{item.name}</span>
+              </button>
+            ) : (
+              <button className={item.doc.id === selected?.id ? 'tree-item tree-item--active' : 'tree-item'} key={item.doc.id} type="button" title={item.doc.title} onClick={() => {
+                setSelectedId(item.doc.id);
+                setSelectedFolderPath('');
+                setEditing(false);
+              }}>
+                <span className="tree-item-title" style={{ paddingLeft: `${item.depth * 14}px` }}>{item.doc.title}</span>
+              </button>
+            )
           ))}
         </div>
       </aside>
@@ -304,7 +325,6 @@ export function DocumentWorkspace({
             <DocumentReader
               canWrite={canWrite}
               doc={selected}
-              member={data.members.find((member) => member.id === selected.ownerMemberId) ?? null}
               session={data.sessions.find((session) => session.id === selected.sessionId) ?? null}
               status={status}
               onDelete={() => void removeSelected()}
@@ -312,8 +332,8 @@ export function DocumentWorkspace({
             />
           ) : (
             <div className="empty-state">
-              <h2 id="reader-title">문서 없음</h2>
-              <p>왼쪽에서 문서를 선택하거나 새 문서를 만드세요.</p>
+              <h2 id="reader-title">{selectedFolderPath ? '폴더 선택됨' : '문서 없음'}</h2>
+              <p>{selectedFolderPath ? '상단의 + 버튼에서 이 폴더에 문서를 만들 수 있습니다.' : '왼쪽에서 문서를 선택하거나 새 문서를 만드세요.'}</p>
             </div>
           )}
         </section>
@@ -325,7 +345,6 @@ export function DocumentWorkspace({
 function DocumentReader({
   canWrite,
   doc,
-  member,
   session,
   status,
   onDelete,
@@ -333,7 +352,6 @@ function DocumentReader({
 }: {
   canWrite: boolean;
   doc: StudyDocument;
-  member: StudyMember | null;
   session: StudySession | null;
   status: string;
   onDelete: () => void;
@@ -343,10 +361,9 @@ function DocumentReader({
     <>
       <div className="reader-toolbar">
         <div>
-          <div className="breadcrumb">{doc.path}</div>
+          <div className="breadcrumb">{doc.kind === 'presentation' && session ? `${session.week}회차 발표` : '자료'}</div>
           <h2 id="reader-title">{doc.title}</h2>
           <div className="meta-row">
-            <span>{member?.displayName ?? '공유'}</span>
             {session ? <span>{session.week}회차</span> : null}
             <span>수정 {formatDate(doc.updatedAt)}</span>
           </div>
@@ -436,10 +453,6 @@ function DocumentEditor({
         <input value={draft.summary} onChange={(event) => onDraftChange({ ...draft, summary: event.target.value })} />
       </label>
       <label>
-        경로
-        <input value={draft.path} onChange={(event) => onDraftChange({ ...draft, path: event.target.value })} />
-      </label>
-      <label>
         태그
         <input value={draft.tags.join(', ')} onChange={(event) => onDraftChange({ ...draft, tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })} />
       </label>
@@ -468,60 +481,42 @@ function DocumentEditor({
   );
 }
 
-type TreeItem =
-  | { type: 'folder'; path: string; name: string; depth: number; ownerMemberId: string | null }
-  | { type: 'doc'; doc: StudyDocument; depth: number };
+type FolderTreeItem = { type: 'folder'; path: string; name: string; label: string; depth: number };
+type TreeItem = FolderTreeItem | { type: 'doc'; doc: StudyDocument; depth: number };
 
-function buildGroups(
+function buildTreeItems(
   kind: DocumentKind,
-  members: StudyMember[],
   folders: DocumentFolder[],
-  docs: StudyDocument[],
-  selectedSession: StudySession | null
-): Array<{ label: string; items: TreeItem[] }> {
-  if (kind === 'presentation') {
-    return members.filter((member) => member.active).map((member) => {
-      const memberDocs = docs.filter((doc) => doc.ownerMemberId === member.id);
-      const memberFolders = folders.filter((folder) => folder.ownerMemberId === member.id);
-      return {
-        label: `${selectedSession?.week ?? ''}회차 / ${member.displayName}`,
-        items: [...folderItems(memberFolders), ...memberDocs.map((doc) => ({ type: 'doc' as const, doc, depth: depthFromPath(doc.path) - 2 }))]
-          .sort(sortTreeItem)
-      };
-    }).filter((group) => group.items.length > 0);
-  }
-
-  const sharedDocs = docs.filter((doc) => doc.ownerMemberId === null);
-  const sharedFolders = folders.filter((folder) => folder.path.startsWith('자료/공유'));
-  const groups = [{
-    label: '공유',
-    items: [...folderItems(sharedFolders), ...sharedDocs.map((doc) => ({ type: 'doc' as const, doc, depth: depthFromPath(doc.path) - 1 }))]
-      .sort(sortTreeItem)
-  }];
-
-  members.filter((member) => member.active).forEach((member) => {
-    const memberDocs = docs.filter((doc) => doc.ownerMemberId === member.id);
-    const memberFolders = folders.filter((folder) => folder.ownerMemberId === member.id);
-    groups.push({
-      label: member.displayName,
-      items: [...folderItems(memberFolders), ...memberDocs.map((doc) => ({ type: 'doc' as const, doc, depth: depthFromPath(doc.path) - 1 }))]
-        .sort(sortTreeItem)
-    });
-  });
-
-  return groups.filter((group) => group.items.length > 0);
+  docs: StudyDocument[]
+): TreeItem[] {
+  return [
+    ...folderItems(kind, folders),
+    ...docs.map((doc) => ({
+      type: 'doc' as const,
+      doc,
+      depth: Math.max(0, visiblePathParts(kind, doc.path).length - 1)
+    }))
+  ].sort(sortTreeItem);
 }
 
-function folderItems(folders: DocumentFolder[]): TreeItem[] {
+function folderItems(kind: DocumentKind, folders: DocumentFolder[]): FolderTreeItem[] {
   return folders
-    .filter((folder) => folder.path.split('/').length > 1)
-    .map((folder) => ({
-      type: 'folder' as const,
-      path: folder.path,
-      name: folder.name,
-      ownerMemberId: folder.ownerMemberId,
-      depth: depthFromPath(folder.path) - 1
-    }));
+    .map((folder) => {
+      const parts = visiblePathParts(kind, folder.path);
+
+      if (parts.length === 0) {
+        return null;
+      }
+
+      return {
+        type: 'folder' as const,
+        path: folder.path,
+        name: parts.at(-1) ?? folder.name,
+        label: parts.join(' / '),
+        depth: Math.max(0, parts.length - 1)
+      };
+    })
+    .filter((folder): folder is FolderTreeItem => folder !== null);
 }
 
 function sortTreeItem(left: TreeItem, right: TreeItem): number {
@@ -530,12 +525,42 @@ function sortTreeItem(left: TreeItem, right: TreeItem): number {
   return leftPath.localeCompare(rightPath, 'ko-KR');
 }
 
-function depthFromPath(path: string): number {
-  return path.split('/').length;
+function visiblePathParts(kind: DocumentKind, path: string): string[] {
+  const parts = path.split('/').filter(Boolean);
+  const hiddenPrefixLength = kind === 'presentation' ? 3 : 2;
+  return parts.slice(hiddenPrefixLength);
 }
 
-function indent(depth: number): string {
-  return depth > 0 ? `${'· '.repeat(Math.max(0, depth - 1))}` : '';
+function defaultFolderLabel(kind: DocumentKind): string {
+  return kind === 'presentation' ? '현재 회차' : '내 자료';
+}
+
+function prepareDraftForSave(draft: DocumentDraft, documents: StudyDocument[]): DocumentDraft {
+  if (draft.id) {
+    return draft;
+  }
+
+  const folder = draft.path.split('/').slice(0, -1).join('/');
+  const fallback = draft.kind === 'presentation' ? 'new-presentation' : 'new-note';
+  const fileName = slugifyFileName(draft.title) || fallback;
+  const path = uniqueDocumentPath(`${folder}/${fileName}.md`, documents);
+
+  return { ...draft, path };
+}
+
+function uniqueDocumentPath(path: string, documents: StudyDocument[]): string {
+  const normalized = path.replace(/\/+/g, '/');
+  const extension = normalized.endsWith('.md') ? '.md' : '';
+  const withoutExtension = extension ? normalized.slice(0, -extension.length) : normalized;
+  let candidate = extension ? normalized : `${normalized}.md`;
+  let index = 2;
+
+  while (documents.some((doc) => doc.path === candidate)) {
+    candidate = `${withoutExtension}-${index}.md`;
+    index += 1;
+  }
+
+  return candidate;
 }
 
 function createDraft(

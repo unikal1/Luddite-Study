@@ -5,7 +5,7 @@ Luddite Study는 GitHub Pages와 Supabase를 분리해서 운영한다.
 ## Responsibilities
 
 - GitHub Pages: Vite/React 정적 프론트엔드 배포
-- Supabase Auth: GitHub OAuth, 이메일/비밀번호 로그인, 비밀번호 재설정
+- Supabase Auth: GitHub OAuth 로그인
 - Supabase Postgres: 모든 운영 데이터와 Markdown 문서의 SSOT
 - Supabase Storage: 문서 이미지와 첨부 파일 보관
 - GitHub repository: 앱 코드, 문서, Supabase config/migrations

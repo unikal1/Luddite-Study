@@ -4,7 +4,7 @@
 
 새 Supabase 프로젝트에는 Auth 사용자와 연결된 운영자가 없다.
 
-1. 앱에서 GitHub OAuth 또는 이메일/비밀번호로 로그인한다.
+1. 앱에서 GitHub OAuth로 로그인한다.
 2. 첫 운영자 등록 화면에서 현재 계정을 운영자로 연결한다.
 3. 이후 RLS는 일반 운영 모드로 전환된다.
 
@@ -13,8 +13,6 @@
 지원 방식:
 
 - GitHub OAuth
-- 이메일/비밀번호
-- 비밀번호 재설정 메일
 
 GitHub OAuth를 실제로 쓰려면 Supabase Dashboard의 Auth Providers에서 GitHub provider를 켜고 GitHub OAuth App의 Client ID/Secret을 등록한다. OAuth client secret은 저장소에 두지 않는다.
 
@@ -23,11 +21,11 @@ GitHub OAuth를 실제로 쓰려면 Supabase Dashboard의 Auth Providers에서 G
 운영 권한(`owner/admin/facilitator`) 사용자는 운영 탭에서 참여자를 추가한다.
 
 - `member_uid`: 문서 경로에 쓰이는 안정 ID
-- `invite_email`: 이메일/비밀번호 가입 시 자동 연결 기준
+- `invite_email`: GitHub OAuth 계정 이메일과 자동 연결하는 보조 기준
 - `github_username`: GitHub OAuth 사용자 식별 보조 정보
 - `role`: `owner`, `admin`, `facilitator`, `member`
 
-초대 이메일과 같은 이메일로 가입한 Auth 사용자는 DB trigger에 의해 해당 `study_members` row에 연결된다.
+초대 이메일과 같은 이메일을 가진 GitHub Auth 사용자는 DB trigger에 의해 해당 `study_members` row에 연결된다.
 
 ## Sessions
 
