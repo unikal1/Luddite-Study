@@ -184,7 +184,6 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
   }
 
   const [
-    projects,
     members,
     sessions,
     folders,
@@ -194,7 +193,6 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
     activityEvents,
     attachments
   ] = await Promise.all([
-    selectRows<DbProject>('study_projects', 'starts_on', false),
     selectRows<DbMember>('study_members', 'display_name'),
     selectRows<DbSession>('study_sessions', 'week'),
     selectRows<DbFolder>('document_folders', 'path'),
@@ -206,14 +204,16 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
   ]);
 
   const mappedMembers = members.map(mapMember);
+  const mappedSessions = sessions.map(mapSession);
+  const projects = await selectProjects(mappedSessions);
   const currentMember = mappedMembers.find((member) => member.id === accessContext.current_member_id)
     ?? mappedMembers.find((member) => member.profileId === authSession?.user.id)
     ?? null;
 
   return {
-    projects: projects.map(mapProject),
+    projects,
     members: mappedMembers,
-    sessions: sessions.map(mapSession),
+    sessions: attachFallbackProject(mappedSessions, projects),
     folders: folders.map(mapFolder),
     documents: documents.map(mapDocument),
     progressTopics: progressTopics.map(mapProgress),
@@ -449,6 +449,9 @@ export async function saveProject(draft: ProjectDraft, currentMemberId: string):
   const { data, error } = await query;
 
   if (error) {
+    if (isMissingProjectSchemaError(error)) {
+      throw new Error('Supabase 프로젝트 migration이 아직 적용되지 않았습니다.');
+    }
     throw error;
   }
 
@@ -456,11 +459,25 @@ export async function saveProject(draft: ProjectDraft, currentMemberId: string):
 }
 
 export async function markProjectDone(projectId: number): Promise<void> {
-  await assertMutation(supabase.from('study_projects').update({ status: 'done', ends_on: todayIso() }).eq('id', projectId));
+  const { error } = await supabase.from('study_projects').update({ status: 'done', ends_on: todayIso() }).eq('id', projectId);
+
+  if (error) {
+    if (isMissingProjectSchemaError(error)) {
+      throw new Error('Supabase 프로젝트 migration이 아직 적용되지 않았습니다.');
+    }
+    throw error;
+  }
 }
 
 export async function deleteProject(projectId: number): Promise<void> {
-  await assertMutation(supabase.from('study_projects').delete().eq('id', projectId));
+  const { error } = await supabase.from('study_projects').delete().eq('id', projectId);
+
+  if (error) {
+    if (isMissingProjectSchemaError(error)) {
+      throw new Error('Supabase 프로젝트 migration이 아직 적용되지 않았습니다.');
+    }
+    throw error;
+  }
 }
 
 export async function saveSession(draft: SessionDraft, currentMemberId: string): Promise<StudySession> {
@@ -487,10 +504,66 @@ export async function saveSession(draft: SessionDraft, currentMemberId: string):
   const { data, error } = await query;
 
   if (error) {
+    if (isMissingProjectSchemaError(error)) {
+      return saveSessionWithoutProjectColumns(draft, currentMemberId);
+    }
     throw error;
   }
 
   return mapSession(data as DbSession);
+}
+
+async function selectProjects(sessions: StudySession[]): Promise<StudyProject[]> {
+  const { data, error } = await supabase.from('study_projects').select('*').order('starts_on', { ascending: false });
+
+  if (error) {
+    if (isMissingProjectSchemaError(error)) {
+      return createFallbackProjects(sessions);
+    }
+
+    throw error;
+  }
+
+  const projects = (data ?? []).map((row) => mapProject(row as DbProject));
+  return projects.length > 0 ? projects : createFallbackProjects(sessions);
+}
+
+function createFallbackProjects(sessions: StudySession[]): StudyProject[] {
+  if (sessions.length === 0) {
+    return [];
+  }
+
+  const ordered = sessions.slice().sort((left, right) => left.week - right.week);
+  const current = sessions.find((session) => session.status === 'current') ?? ordered.at(-1) ?? ordered[0];
+  const totalPages = Math.max(1, sessions.reduce((sum, session) => sum + Math.max(session.progressTarget, session.projectProgress), 0));
+
+  return [{
+    id: 0,
+    title: current.progressLabel || '스터디 프로젝트',
+    type: 'book',
+    status: 'current',
+    totalPages,
+    imageUrl: '',
+    goal: current.goal,
+    startsOn: ordered[0].startsOn,
+    endsOn: null,
+    createdBy: current.createdBy,
+    createdAt: current.createdAt,
+    updatedAt: current.updatedAt
+  }];
+}
+
+function attachFallbackProject(sessions: StudySession[], projects: StudyProject[]): StudySession[] {
+  const fallbackProject = projects.find((project) => project.id === 0);
+  if (!fallbackProject) {
+    return sessions;
+  }
+
+  return sessions.map((session) => ({
+    ...session,
+    projectId: session.projectId ?? fallbackProject.id,
+    projectProgress: session.projectProgress || session.progressCurrent
+  }));
 }
 
 export async function markSessionDone(sessionId: number): Promise<void> {
@@ -503,6 +576,38 @@ export async function deleteSession(sessionId: number): Promise<void> {
 
 export async function chooseSessionPresenters(sessionId: number, presenterIds: string[]): Promise<void> {
   await assertMutation(supabase.from('study_sessions').update({ presenter_member_ids: presenterIds }).eq('id', sessionId));
+}
+
+async function saveSessionWithoutProjectColumns(draft: SessionDraft, currentMemberId: string): Promise<StudySession> {
+  const payload = {
+    title: draft.title.trim() || `${draft.week}회차`,
+    week: draft.week,
+    status: draft.status,
+    starts_on: draft.startsOn,
+    ends_on: draft.endsOn,
+    presentation_on: draft.presentationOn,
+    start_time: draft.startTime,
+    end_time: draft.endTime,
+    location: draft.location.trim() || 'Discord',
+    goal: draft.goal.trim(),
+    facilitator_member_id: draft.facilitatorMemberId,
+    agenda: draft.agenda.filter(Boolean)
+  };
+
+  const query = draft.id
+    ? supabase.from('study_sessions').update(payload).eq('id', draft.id).select('*').single()
+    : supabase.from('study_sessions').insert({ ...payload, created_by: currentMemberId }).select('*').single();
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    ...mapSession(data as DbSession),
+    projectId: draft.projectId,
+    projectProgress: draft.projectProgress
+  };
 }
 
 export async function uploadDocumentImage(documentId: string, file: File, currentMemberId: string): Promise<string> {
@@ -601,7 +706,7 @@ function mapProject(row: DbProject): StudyProject {
 function mapSession(row: DbSession): StudySession {
   return {
     id: row.id,
-    projectId: row.project_id,
+    projectId: row.project_id ?? null,
     title: row.title,
     week: row.week,
     status: row.status,
@@ -620,11 +725,23 @@ function mapSession(row: DbSession): StudySession {
     progressCurrent: row.progress_current,
     progressTarget: row.progress_target,
     progressUnit: row.progress_unit,
-    projectProgress: row.project_progress ?? 0,
+    projectProgress: row.project_progress ?? row.progress_current ?? 0,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function isMissingProjectSchemaError(error: unknown): boolean {
+  const candidate = error as { code?: string; message?: string };
+  const message = candidate.message ?? '';
+  return candidate.code === '42P01' ||
+    candidate.code === '42703' ||
+    message.includes('study_projects') ||
+    message.includes('project_id') ||
+    message.includes('project_progress') ||
+    message.includes('Could not find the') ||
+    message.includes('schema cache');
 }
 
 function mapFolder(row: DbFolder): DocumentFolder {

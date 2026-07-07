@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 
 test('dashboard, document workspaces, and operations work on desktop', async ({ page }, testInfo) => {
-  await page.goto('./?demo=1');
+  await page.goto('./?demo=1#dashboard');
 
   await expect(page.getByRole('heading', { name: /3회차 · 브라우저 디버깅과 성능/ })).toBeVisible();
   await expect(page.getByText('당일 추첨 전')).toBeVisible();
@@ -91,7 +91,7 @@ test('dashboard, document workspaces, and operations work on desktop', async ({ 
 
 test('mobile viewport keeps the primary flows reachable', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('./?demo=1');
+  await page.goto('./?demo=1#dashboard');
 
   await expect(page.getByRole('heading', { name: /3회차 · 브라우저 디버깅과 성능/ })).toBeVisible();
   await page.getByRole('button', { name: '발표', exact: true }).click();
@@ -101,7 +101,7 @@ test('mobile viewport keeps the primary flows reachable', async ({ page }, testI
 });
 
 test('primary demo pages have no detectable accessibility violations', async ({ page }) => {
-  await page.goto('./?demo=1');
+  await page.goto('./?demo=1#dashboard');
 
   for (const route of ['대시보드', '프로젝트', '자료', '발표', '운영']) {
     if (route !== '대시보드') {
