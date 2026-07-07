@@ -2133,9 +2133,13 @@ textarea {
 .project-image-placeholder {
   width: 120px;
   aspect-ratio: 4 / 3;
-  object-fit: cover;
   border-radius: 8px;
   background: var(--surface-muted);
+}
+
+.project-progress-card img,
+.project-dashboard-summary img {
+  object-fit: contain;
 }
 
 .project-image-placeholder {

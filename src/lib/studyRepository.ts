@@ -205,7 +205,8 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
 
   const mappedMembers = members.map(mapMember);
   const mappedSessions = sessions.map(mapSession);
-  const projects = await selectProjects(mappedSessions);
+  const mappedProgressTopics = progressTopics.map(mapProgress);
+  const projects = await selectProjects(mappedSessions, mappedProgressTopics, accessContext.current_member_id);
   const currentMember = mappedMembers.find((member) => member.id === accessContext.current_member_id)
     ?? mappedMembers.find((member) => member.profileId === authSession?.user.id)
     ?? null;
@@ -216,7 +217,7 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
     sessions: attachFallbackProject(stripLegacyProjectResources(mappedSessions), projects),
     folders: folders.map(mapFolder),
     documents: documents.map(mapDocument),
-    progressTopics: progressTopics.map(mapProgress),
+    progressTopics: mappedProgressTopics.filter((topic) => topic.slug !== legacyProjectTopicSlug),
     penalties: penalties.map(mapPenalty),
     activityEvents: activityEvents.map(mapEvent),
     attachments: attachments.map(mapAttachment),
@@ -461,10 +462,6 @@ export async function saveProject(draft: ProjectDraft, currentMemberId: string):
 async function saveProjectWithoutProjectSchema(draft: ProjectDraft, currentMemberId: string): Promise<StudyProject> {
   const sessions = await selectRows<DbSession>('study_sessions', 'week');
 
-  if (sessions.length === 0) {
-    throw new Error('프로젝트를 저장하려면 먼저 회차를 시작하세요.');
-  }
-
   const title = draft.title.trim() || '스터디 프로젝트';
   const progressTarget = Math.max(
     1,
@@ -472,17 +469,20 @@ async function saveProjectWithoutProjectSchema(draft: ProjectDraft, currentMembe
     ...sessions.map((session) => session.progress_current ?? 0)
   );
   const progressUnit = draft.type === 'book' ? 'p' : '%';
-  const { error: progressError } = await supabase
-    .from('study_sessions')
-    .update({
-      progress_label: title,
-      progress_target: progressTarget,
-      progress_unit: progressUnit
-    })
-    .neq('id', -1);
 
-  if (progressError) {
-    throw progressError;
+  if (sessions.length > 0) {
+    const { error: progressError } = await supabase
+      .from('study_sessions')
+      .update({
+        progress_label: title,
+        progress_target: progressTarget,
+        progress_unit: progressUnit
+      })
+      .neq('id', -1);
+
+    if (progressError) {
+      throw progressError;
+    }
   }
 
   const currentSession = sessions.find((session) => session.status === 'current') ?? sessions.at(-1) ?? sessions[0];
@@ -498,6 +498,30 @@ async function saveProjectWithoutProjectSchema(draft: ProjectDraft, currentMembe
   }
 
   const now = new Date().toISOString();
+  const currentProgress = Math.min(progressTarget, sessions.reduce((sum, session) => sum + Math.max(0, session.progress_current ?? 0), 0));
+  const notes = JSON.stringify({
+    type: draft.type,
+    status: draft.status,
+    imageUrl: draft.imageUrl.trim(),
+    goal: draft.goal.trim(),
+    startsOn: draft.startsOn,
+    endsOn: draft.endsOn
+  });
+  const { error: topicError } = await supabase.from('progress_topics').upsert({
+    slug: legacyProjectTopicSlug,
+    name: title,
+    owner_member_id: currentMemberId,
+    current: currentProgress,
+    target: progressTarget,
+    unit: progressUnit,
+    status: progressStatusFromProjectStatus(draft.status),
+    notes
+  }, { onConflict: 'slug' });
+
+  if (topicError) {
+    throw topicError;
+  }
+
   const project = {
     id: 0,
     title,
@@ -513,11 +537,16 @@ async function saveProjectWithoutProjectSchema(draft: ProjectDraft, currentMembe
     updatedAt: now
   };
 
-  await writeLegacyProjectSnapshot(currentSession, project);
+  await writeLegacyProjectResourceSnapshot(currentSession, project);
   return project;
 }
 
 export async function markProjectDone(projectId: number): Promise<void> {
+  if (projectId === 0) {
+    await markLegacyProjectDone();
+    return;
+  }
+
   const { error } = await supabase.from('study_projects').update({ status: 'done', ends_on: todayIso() }).eq('id', projectId);
 
   if (error) {
@@ -529,6 +558,11 @@ export async function markProjectDone(projectId: number): Promise<void> {
 }
 
 export async function deleteProject(projectId: number): Promise<void> {
+  if (projectId === 0) {
+    await deleteLegacyProjectSnapshot();
+    return;
+  }
+
   const { data, error } = await supabase.from('study_projects').delete().eq('id', projectId).select('id');
 
   if (error) {
@@ -576,12 +610,17 @@ export async function saveSession(draft: SessionDraft, currentMemberId: string):
   return mapSession(data as DbSession);
 }
 
-async function selectProjects(sessions: StudySession[]): Promise<StudyProject[]> {
+async function selectProjects(sessions: StudySession[], progressTopics: ProgressTopic[], currentMemberId: string | null): Promise<StudyProject[]> {
   const { data, error } = await supabase.from('study_projects').select('*').order('starts_on', { ascending: false });
 
   if (error) {
     if (isMissingProjectSchemaError(error)) {
-      return createFallbackProjects(sessions);
+      const projects = createFallbackProjects(sessions, progressTopics);
+      const hasLegacyTopic = progressTopics.some((topic) => topic.slug === legacyProjectTopicSlug);
+      if (!hasLegacyTopic && currentMemberId && projects[0]) {
+        await migrateLegacyProjectSnapshot(projects[0], sessions, currentMemberId);
+      }
+      return projects;
     }
 
     throw error;
@@ -590,16 +629,15 @@ async function selectProjects(sessions: StudySession[]): Promise<StudyProject[]>
   return (data ?? []).map((row) => mapProject(row as DbProject));
 }
 
-function createFallbackProjects(sessions: StudySession[]): StudyProject[] {
+function createFallbackProjects(sessions: StudySession[], progressTopics: ProgressTopic[]): StudyProject[] {
+  const saved = readLegacyProjectSnapshot(sessions, progressTopics);
   if (sessions.length === 0) {
-    return [];
+    return saved ? [projectFromLegacySnapshot(saved, null)] : [];
   }
-
   const ordered = sessions.slice().sort((left, right) => left.week - right.week);
   const current = sessions.find((session) => session.status === 'current') ?? ordered.at(-1) ?? ordered[0];
   const totalPages = Math.max(1, ...sessions.map((session) => Math.max(session.progressTarget, session.projectProgress)));
   const type = current.progressUnit === '%' ? 'free' : 'book';
-  const saved = readLegacyProjectSnapshot(sessions);
 
   return [{
     id: 0,
@@ -615,6 +653,53 @@ function createFallbackProjects(sessions: StudySession[]): StudyProject[] {
     createdAt: current.createdAt,
     updatedAt: current.updatedAt
   }];
+}
+
+function projectFromLegacySnapshot(saved: LegacyProjectSnapshot, session: StudySession | null): StudyProject {
+  const now = new Date().toISOString();
+  return {
+    id: 0,
+    title: saved.title || '스터디 프로젝트',
+    type: saved.type,
+    status: saved.status,
+    totalPages: Math.max(1, saved.totalPages),
+    imageUrl: saved.imageUrl,
+    goal: saved.goal,
+    startsOn: saved.startsOn || todayIso(),
+    endsOn: saved.endsOn,
+    createdBy: session?.createdBy ?? null,
+    createdAt: session?.createdAt ?? now,
+    updatedAt: session?.updatedAt ?? now
+  };
+}
+
+async function migrateLegacyProjectSnapshot(project: StudyProject, sessions: StudySession[], currentMemberId: string): Promise<void> {
+  const currentProgress = Math.min(
+    Math.max(1, project.totalPages),
+    sessions.reduce((sum, session) => sum + Math.max(0, session.progressCurrent), 0)
+  );
+
+  const { error } = await supabase.from('progress_topics').upsert({
+    slug: legacyProjectTopicSlug,
+    name: project.title,
+    owner_member_id: currentMemberId,
+    current: currentProgress,
+    target: Math.max(1, project.totalPages),
+    unit: project.type === 'book' ? 'p' : '%',
+    status: progressStatusFromProjectStatus(project.status),
+    notes: JSON.stringify({
+      type: project.type,
+      status: project.status,
+      imageUrl: project.imageUrl,
+      goal: project.goal,
+      startsOn: project.startsOn,
+      endsOn: project.endsOn
+    })
+  }, { onConflict: 'slug' });
+
+  if (!error) {
+    clearLegacyProjectLocalStorage();
+  }
 }
 
 function attachFallbackProject(sessions: StudySession[], projects: StudyProject[]): StudySession[] {
@@ -833,11 +918,17 @@ function isMissingProjectSchemaError(error: unknown): boolean {
     message.includes('schema cache');
 }
 
+const legacyProjectTopicSlug = '__luddite_legacy_project__';
 const legacyProjectMetaPrefix = '__luddite_project_meta__:';
 
-type LegacyProjectSnapshot = Pick<StudyProject, 'title' | 'type' | 'totalPages' | 'imageUrl' | 'goal' | 'startsOn' | 'endsOn'>;
+type LegacyProjectSnapshot = Pick<StudyProject, 'title' | 'type' | 'status' | 'totalPages' | 'imageUrl' | 'goal' | 'startsOn' | 'endsOn'>;
 
-function readLegacyProjectSnapshot(sessions: StudySession[]): LegacyProjectSnapshot | null {
+function readLegacyProjectSnapshot(sessions: StudySession[], progressTopics: ProgressTopic[]): LegacyProjectSnapshot | null {
+  const topic = progressTopics.find((item) => item.slug === legacyProjectTopicSlug);
+  if (topic) {
+    return legacyProjectSnapshotFromProgressTopic(topic);
+  }
+
   for (const resource of sessions.flatMap((session) => session.resources).filter(isLegacyProjectResource).reverse()) {
     const snapshot = parseLegacyProjectResource(resource);
     if (snapshot) {
@@ -848,7 +939,58 @@ function readLegacyProjectSnapshot(sessions: StudySession[]): LegacyProjectSnaps
   return readLegacyProjectSnapshotFromLocalStorage();
 }
 
-async function writeLegacyProjectSnapshot(session: DbSession | undefined, project: LegacyProjectSnapshot): Promise<void> {
+async function markLegacyProjectDone(): Promise<void> {
+  const { data, error: selectError } = await supabase
+    .from('progress_topics')
+    .select('name,target,unit,status,notes')
+    .eq('slug', legacyProjectTopicSlug)
+    .maybeSingle();
+
+  if (selectError) {
+    throw selectError;
+  }
+
+  const topic = data as Pick<DbProgress, 'name' | 'target' | 'unit' | 'status' | 'notes'> | null;
+  const snapshot = topic
+    ? legacyProjectSnapshotFromProgressTopic({
+      id: '',
+      slug: legacyProjectTopicSlug,
+      name: topic.name,
+      ownerMemberId: null,
+      current: 0,
+      target: topic.target,
+      unit: topic.unit,
+      status: topic.status,
+      notes: topic.notes,
+      createdAt: '',
+      updatedAt: ''
+    })
+    : readLegacyProjectSnapshotFromLocalStorage();
+  const notes = snapshot ? JSON.stringify({ ...snapshot, status: 'done', endsOn: todayIso() }) : undefined;
+  const { error } = await supabase
+    .from('progress_topics')
+    .update({
+      status: 'done',
+      ...(notes ? { notes } : {})
+    })
+    .eq('slug', legacyProjectTopicSlug);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function deleteLegacyProjectSnapshot(): Promise<void> {
+  const { error } = await supabase.from('progress_topics').delete().eq('slug', legacyProjectTopicSlug);
+
+  if (error) {
+    throw error;
+  }
+
+  clearLegacyProjectLocalStorage();
+}
+
+async function writeLegacyProjectResourceSnapshot(session: DbSession | undefined, project: LegacyProjectSnapshot): Promise<void> {
   if (!session) {
     return;
   }
@@ -879,19 +1021,21 @@ function isLegacyProjectResource(resource: string): boolean {
 
 function parseLegacyProjectResource(resource: string): LegacyProjectSnapshot | null {
   try {
-    const parsed = JSON.parse(decodeURIComponent(resource.slice(legacyProjectMetaPrefix.length))) as Partial<LegacyProjectSnapshot>;
-    return {
-      title: typeof parsed.title === 'string' ? parsed.title : '',
-      type: parsed.type === 'free' ? 'free' : 'book',
-      totalPages: typeof parsed.totalPages === 'number' && Number.isFinite(parsed.totalPages) ? parsed.totalPages : 1,
-      imageUrl: typeof parsed.imageUrl === 'string' ? parsed.imageUrl : '',
-      goal: typeof parsed.goal === 'string' ? parsed.goal : '',
-      startsOn: typeof parsed.startsOn === 'string' ? parsed.startsOn : '',
-      endsOn: typeof parsed.endsOn === 'string' ? parsed.endsOn : null
-    };
+    return parseLegacyProjectSnapshotJson(decodeURIComponent(resource.slice(legacyProjectMetaPrefix.length)));
   } catch {
     return null;
   }
+}
+
+function legacyProjectSnapshotFromProgressTopic(topic: ProgressTopic): LegacyProjectSnapshot {
+  const parsed = parseLegacyProjectSnapshotJson(topic.notes) ?? emptyLegacyProjectSnapshot();
+  return {
+    ...parsed,
+    title: topic.name || parsed.title,
+    type: parsed.type || (topic.unit === '%' ? 'free' : 'book'),
+    status: projectStatusFromProgressStatus(topic.status),
+    totalPages: Math.max(1, topic.target || parsed.totalPages || 1)
+  };
 }
 
 const legacyProjectStorageKey = 'luddite-study:legacy-project';
@@ -923,6 +1067,7 @@ function parseLegacyProjectSnapshotJson(raw: string): LegacyProjectSnapshot | nu
     return {
       title: typeof parsed.title === 'string' ? parsed.title : '',
       type: parsed.type === 'free' ? 'free' : 'book',
+      status: parsed.status === 'planned' || parsed.status === 'done' ? parsed.status : 'current',
       totalPages: typeof parsed.totalPages === 'number' && Number.isFinite(parsed.totalPages) ? parsed.totalPages : 1,
       imageUrl: typeof parsed.imageUrl === 'string' ? parsed.imageUrl : '',
       goal: typeof parsed.goal === 'string' ? parsed.goal : '',
@@ -932,6 +1077,31 @@ function parseLegacyProjectSnapshotJson(raw: string): LegacyProjectSnapshot | nu
   } catch {
     return null;
   }
+}
+
+function emptyLegacyProjectSnapshot(): LegacyProjectSnapshot {
+  return {
+    title: '',
+    type: 'book',
+    status: 'current',
+    totalPages: 1,
+    imageUrl: '',
+    goal: '',
+    startsOn: '',
+    endsOn: null
+  };
+}
+
+function progressStatusFromProjectStatus(status: StudyProject['status']): ProgressTopic['status'] {
+  if (status === 'done') return 'done';
+  if (status === 'planned') return 'planned';
+  return 'active';
+}
+
+function projectStatusFromProgressStatus(status: ProgressTopic['status']): StudyProject['status'] {
+  if (status === 'done') return 'done';
+  if (status === 'planned') return 'planned';
+  return 'current';
 }
 
 function mapFolder(row: DbFolder): DocumentFolder {

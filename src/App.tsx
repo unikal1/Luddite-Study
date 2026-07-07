@@ -343,11 +343,6 @@ export default function App() {
       return;
     }
 
-    if (projectId === 0) {
-      removeProjectFromState(projectId);
-      return;
-    }
-
     await deleteProject(projectId);
     removeProjectFromState(projectId);
     await refresh(authSession, { showLoader: false });
