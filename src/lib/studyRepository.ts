@@ -450,12 +450,68 @@ export async function saveProject(draft: ProjectDraft, currentMemberId: string):
 
   if (error) {
     if (isMissingProjectSchemaError(error)) {
-      throw new Error('Supabase 프로젝트 migration이 아직 적용되지 않았습니다.');
+      return saveProjectWithoutProjectSchema(draft, currentMemberId);
     }
     throw error;
   }
 
   return mapProject(data as DbProject);
+}
+
+async function saveProjectWithoutProjectSchema(draft: ProjectDraft, currentMemberId: string): Promise<StudyProject> {
+  const sessions = await selectRows<DbSession>('study_sessions', 'week');
+
+  if (sessions.length === 0) {
+    throw new Error('프로젝트를 저장하려면 먼저 회차를 시작하세요.');
+  }
+
+  const title = draft.title.trim() || '스터디 프로젝트';
+  const progressTarget = Math.max(
+    1,
+    draft.totalPages || 1,
+    ...sessions.map((session) => session.progress_current ?? 0)
+  );
+  const progressUnit = draft.type === 'book' ? 'p' : '%';
+  const { error: progressError } = await supabase
+    .from('study_sessions')
+    .update({
+      progress_label: title,
+      progress_target: progressTarget,
+      progress_unit: progressUnit
+    })
+    .neq('id', -1);
+
+  if (progressError) {
+    throw progressError;
+  }
+
+  const currentSession = sessions.find((session) => session.status === 'current') ?? sessions.at(-1) ?? sessions[0];
+  if (currentSession) {
+    const { error: goalError } = await supabase
+      .from('study_sessions')
+      .update({ goal: draft.goal.trim() })
+      .eq('id', currentSession.id);
+
+    if (goalError) {
+      throw goalError;
+    }
+  }
+
+  const now = new Date().toISOString();
+  return {
+    id: 0,
+    title,
+    type: draft.type,
+    status: draft.status,
+    totalPages: progressTarget,
+    imageUrl: draft.imageUrl.trim(),
+    goal: draft.goal.trim(),
+    startsOn: draft.startsOn,
+    endsOn: draft.endsOn,
+    createdBy: currentMemberId,
+    createdAt: currentSession?.created_at ?? now,
+    updatedAt: now
+  };
 }
 
 export async function markProjectDone(projectId: number): Promise<void> {
@@ -538,12 +594,13 @@ function createFallbackProjects(sessions: StudySession[]): StudyProject[] {
 
   const ordered = sessions.slice().sort((left, right) => left.week - right.week);
   const current = sessions.find((session) => session.status === 'current') ?? ordered.at(-1) ?? ordered[0];
-  const totalPages = Math.max(1, sessions.reduce((sum, session) => sum + Math.max(session.progressTarget, session.projectProgress), 0));
+  const totalPages = Math.max(1, ...sessions.map((session) => Math.max(session.progressTarget, session.projectProgress)));
+  const type = current.progressUnit === '%' ? 'free' : 'book';
 
   return [{
     id: 0,
     title: current.progressLabel || '스터디 프로젝트',
-    type: 'book',
+    type,
     status: 'current',
     totalPages,
     imageUrl: '',
@@ -590,6 +647,21 @@ export async function chooseSessionPresenters(sessionId: number, presenterIds: s
 }
 
 async function saveSessionWithoutProjectColumns(draft: SessionDraft, currentMemberId: string): Promise<StudySession> {
+  let progressTarget = Math.max(1, draft.projectProgress || 0);
+  if (draft.id) {
+    const { data: existing, error: existingError } = await supabase
+      .from('study_sessions')
+      .select('progress_target')
+      .eq('id', draft.id)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    progressTarget = Math.max(progressTarget, (existing as Pick<DbSession, 'progress_target'> | null)?.progress_target ?? 1);
+  }
+
   const payload = {
     title: draft.title.trim() || `${draft.week}회차`,
     week: draft.week,
@@ -602,7 +674,9 @@ async function saveSessionWithoutProjectColumns(draft: SessionDraft, currentMemb
     location: draft.location.trim() || 'Discord',
     goal: draft.goal.trim(),
     facilitator_member_id: draft.facilitatorMemberId,
-    agenda: draft.agenda.filter(Boolean)
+    agenda: draft.agenda.filter(Boolean),
+    progress_current: Math.max(0, draft.projectProgress || 0),
+    progress_target: progressTarget
   };
 
   const query = draft.id

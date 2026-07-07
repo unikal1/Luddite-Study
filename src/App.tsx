@@ -314,7 +314,7 @@ export default function App() {
 
     if (draft.status === 'current') {
       const currentProject = data.projects.find((project) => project.status === 'current' && project.id !== draft.id);
-      if (currentProject) {
+      if (currentProject && currentProject.id !== 0) {
         await markProjectDone(currentProject.id);
       }
     }
