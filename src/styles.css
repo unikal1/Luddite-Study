@@ -1602,8 +1602,13 @@ textarea {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .editor-modal-backdrop {
+    padding: 12px;
+  }
+
   .writing-page {
-    min-height: calc(100vh - 96px);
+    width: 100%;
+    height: calc(100vh - 24px);
   }
 
   .writing-pane {
@@ -1928,13 +1933,26 @@ textarea {
   padding: 8px 10px;
 }
 
+.editor-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  background: rgb(15 23 42 / 46%);
+  padding: 24px;
+}
+
 .writing-page {
   display: grid;
-  min-height: calc(100vh - 136px);
   grid-template-rows: minmax(0, 1fr) auto;
+  width: min(1180px, 100%);
+  height: min(820px, calc(100vh - 48px));
+  min-height: 0;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
+  box-shadow: 0 24px 80px rgb(15 23 42 / 24%);
   overflow: hidden;
 }
 
@@ -1951,9 +1969,10 @@ textarea {
 }
 
 .writing-pane--editor {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
+  overflow: auto;
 }
 
 .writing-pane--preview {
@@ -2019,7 +2038,8 @@ textarea {
 }
 
 .writing-textarea {
-  min-height: 48vh;
+  flex: 1 1 320px;
+  min-height: 240px;
   resize: none;
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;

@@ -540,32 +540,14 @@ export function DocumentWorkspace({
       </aside>
 
       <div className="workspace-main">
-        <section className={editing ? 'reader-panel workspace-reader workspace-reader--writing' : 'reader-panel workspace-reader'} aria-labelledby="reader-title">
-          {editing ? (
-            <DocumentEditor
-              canWrite={canWrite}
-              currentMember={currentMember}
-              draft={draft}
-              kind={kind}
-              selectedSession={selectedSession}
-              status={status}
-              textareaRef={textareaRef}
-              onCancel={() => {
-                setEditing(false);
-                setStatus('');
-              }}
-              onDraftChange={setDraft}
-              onDrop={(event) => void handleDrop(event)}
-              onInsertMarkdown={insertMarkdown}
-              onSave={() => void save()}
-            />
-          ) : selected ? (
+        <section className="reader-panel workspace-reader" aria-labelledby="reader-title">
+          {selected ? (
             <DocumentReader
               canWrite={canWrite}
               doc={selected}
               member={data.members.find((member) => member.id === selected.ownerMemberId) ?? null}
               session={data.sessions.find((session) => session.id === selected.sessionId) ?? null}
-              status={status}
+              status={editing ? '' : status}
               onDelete={() => void removeSelected()}
               onEdit={() => startEditDocument(selected)}
             />
@@ -579,11 +561,33 @@ export function DocumentWorkspace({
                   폴더 삭제
                 </button>
               ) : null}
-              {status ? <p className="form-status">{status}</p> : null}
+              {!editing && status ? <p className="form-status">{status}</p> : null}
             </div>
           )}
         </section>
       </div>
+
+      {editing ? (
+        <div className="editor-modal-backdrop">
+          <DocumentEditor
+            canWrite={canWrite}
+            currentMember={currentMember}
+            draft={draft}
+            kind={kind}
+            selectedSession={selectedSession}
+            status={status}
+            textareaRef={textareaRef}
+            onCancel={() => {
+              setEditing(false);
+              setStatus('');
+            }}
+            onDraftChange={setDraft}
+            onDrop={(event) => void handleDrop(event)}
+            onInsertMarkdown={insertMarkdown}
+            onSave={() => void save()}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -665,10 +669,10 @@ function DocumentEditor({
   onSave: () => void;
 }) {
   return (
-    <div className="writing-page">
+    <div className="writing-page" role="dialog" aria-modal="true" aria-labelledby="document-editor-title">
       <div className="writing-grid">
-        <section className="writing-pane writing-pane--editor" aria-labelledby="reader-title">
-          <h2 id="reader-title" className="sr-only">{kind === 'material' ? '자료 작성' : `${selectedSession?.week ?? ''}회차 발표 작성`}</h2>
+        <section className="writing-pane writing-pane--editor" aria-labelledby="document-editor-title">
+          <h2 id="document-editor-title" className="sr-only">{kind === 'material' ? '자료 작성' : `${selectedSession?.week ?? ''}회차 발표 작성`}</h2>
           <p className="eyebrow">{draft.id ? '문서 수정' : '새 문서'}</p>
           <input
             className="writing-title"

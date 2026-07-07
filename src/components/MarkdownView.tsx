@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { attachmentPathFromSrc, isSupabaseAttachment, storageBucketId, supabase } from '../lib/supabase';
 
@@ -11,7 +12,7 @@ export function MarkdownView({ content }: MarkdownViewProps) {
   return (
     <article className="markdown-body">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
           a: ({ href, children }) => (
             <a href={normalizeContentUrl(href)} target={href?.startsWith('http') ? '_blank' : undefined} rel="noreferrer">

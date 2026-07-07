@@ -36,6 +36,8 @@ test('dashboard, document workspaces, and operations work on desktop', async ({ 
   await page.getByLabel('Markdown').dispatchEvent('drop', { dataTransfer });
   await expect(page.getByText('이미지가 첨부됐습니다.')).toBeVisible();
   await expect(page.getByLabel('Markdown')).toHaveValue(/!\[diagram\.png]\(blob:/);
+  await page.getByRole('button', { name: '저장하기' }).click();
+  await expect(page.getByRole('heading', { name: '브라우저 검증 노트', level: 2 })).toBeVisible();
 
   await page.getByRole('button', { name: '자료 폴더 추가' }).click();
   await page.locator('.tree-rename-input').fill('deep-folder');
