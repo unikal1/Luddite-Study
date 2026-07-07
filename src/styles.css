@@ -1940,14 +1940,14 @@ textarea {
   display: grid;
   place-items: center;
   background: rgb(15 23 42 / 46%);
-  padding: 24px;
+  padding: 16px;
 }
 
 .writing-page {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  width: min(1180px, 100%);
-  height: min(820px, calc(100vh - 48px));
+  width: min(1770px, calc(100vw - 32px));
+  height: min(1230px, calc(100vh - 32px));
   min-height: 0;
   background: var(--surface);
   border: 1px solid var(--line);

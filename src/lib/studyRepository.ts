@@ -24,6 +24,7 @@ import type {
 } from '../types';
 import { todayIso } from '../utils/dates';
 import { slugifyFileName } from '../utils/path';
+import { normalizeSessionDraftForSave } from '../utils/sessionDraft';
 
 type DbMember = {
   id: string;
@@ -578,31 +579,37 @@ export async function deleteProject(projectId: number): Promise<void> {
 }
 
 export async function saveSession(draft: SessionDraft, currentMemberId: string): Promise<StudySession> {
+  const safeDraft = normalizeSessionDraftForSave(draft);
+
+  if (safeDraft.status === 'current') {
+    await markOtherCurrentSessionsDone(safeDraft.id);
+  }
+
   const payload = {
-    project_id: draft.projectId,
-    title: draft.title.trim() || `${draft.week}회차`,
-    week: draft.week,
-    status: draft.status,
-    starts_on: draft.startsOn,
-    ends_on: draft.endsOn,
-    presentation_on: draft.presentationOn,
-    start_time: draft.startTime,
-    end_time: draft.endTime,
-    location: draft.location.trim() || 'Discord',
-    goal: draft.goal.trim(),
-    facilitator_member_id: draft.facilitatorMemberId,
-    agenda: draft.agenda.filter(Boolean),
-    project_progress: Math.max(0, draft.projectProgress || 0)
+    project_id: safeDraft.projectId,
+    title: safeDraft.title.trim() || `${safeDraft.week}회차`,
+    week: safeDraft.week,
+    status: safeDraft.status,
+    starts_on: safeDraft.startsOn,
+    ends_on: safeDraft.endsOn,
+    presentation_on: safeDraft.presentationOn,
+    start_time: safeDraft.startTime,
+    end_time: safeDraft.endTime,
+    location: safeDraft.location.trim() || 'Discord',
+    goal: safeDraft.goal.trim(),
+    facilitator_member_id: safeDraft.facilitatorMemberId,
+    agenda: safeDraft.agenda.filter(Boolean),
+    project_progress: Math.max(0, safeDraft.projectProgress || 0)
   };
 
-  const query = draft.id
-    ? supabase.from('study_sessions').update(payload).eq('id', draft.id).select('*').single()
+  const query = safeDraft.id
+    ? supabase.from('study_sessions').update(payload).eq('id', safeDraft.id).select('*').single()
     : supabase.from('study_sessions').insert({ ...payload, created_by: currentMemberId }).select('*').single();
   const { data, error } = await query;
 
   if (error) {
     if (isMissingProjectSchemaError(error)) {
-      return saveSessionWithoutProjectColumns(draft, currentMemberId);
+      return saveSessionWithoutProjectColumns(safeDraft, currentMemberId);
     }
     throw error;
   }
@@ -719,6 +726,16 @@ export async function markSessionDone(sessionId: number): Promise<void> {
   await assertMutation(supabase.from('study_sessions').update({ status: 'done' }).eq('id', sessionId));
 }
 
+async function markOtherCurrentSessionsDone(sessionId?: number): Promise<void> {
+  let query = supabase.from('study_sessions').update({ status: 'done' }).eq('status', 'current');
+
+  if (sessionId) {
+    query = query.neq('id', sessionId);
+  }
+
+  await assertMutation(query);
+}
+
 export async function deleteSession(sessionId: number): Promise<void> {
   const { data, error } = await supabase.from('study_sessions').delete().eq('id', sessionId).select('id');
 
@@ -736,12 +753,13 @@ export async function chooseSessionPresenters(sessionId: number, presenterIds: s
 }
 
 async function saveSessionWithoutProjectColumns(draft: SessionDraft, currentMemberId: string): Promise<StudySession> {
-  let progressTarget = Math.max(1, draft.projectProgress || 0);
-  if (draft.id) {
+  const safeDraft = normalizeSessionDraftForSave(draft);
+  let progressTarget = Math.max(1, safeDraft.projectProgress || 0);
+  if (safeDraft.id) {
     const { data: existing, error: existingError } = await supabase
       .from('study_sessions')
       .select('progress_target')
-      .eq('id', draft.id)
+      .eq('id', safeDraft.id)
       .maybeSingle();
 
     if (existingError) {
@@ -752,24 +770,24 @@ async function saveSessionWithoutProjectColumns(draft: SessionDraft, currentMemb
   }
 
   const payload = {
-    title: draft.title.trim() || `${draft.week}회차`,
-    week: draft.week,
-    status: draft.status,
-    starts_on: draft.startsOn,
-    ends_on: draft.endsOn,
-    presentation_on: draft.presentationOn,
-    start_time: draft.startTime,
-    end_time: draft.endTime,
-    location: draft.location.trim() || 'Discord',
-    goal: draft.goal.trim(),
-    facilitator_member_id: draft.facilitatorMemberId,
-    agenda: draft.agenda.filter(Boolean),
-    progress_current: Math.max(0, draft.projectProgress || 0),
+    title: safeDraft.title.trim() || `${safeDraft.week}회차`,
+    week: safeDraft.week,
+    status: safeDraft.status,
+    starts_on: safeDraft.startsOn,
+    ends_on: safeDraft.endsOn,
+    presentation_on: safeDraft.presentationOn,
+    start_time: safeDraft.startTime,
+    end_time: safeDraft.endTime,
+    location: safeDraft.location.trim() || 'Discord',
+    goal: safeDraft.goal.trim(),
+    facilitator_member_id: safeDraft.facilitatorMemberId,
+    agenda: safeDraft.agenda.filter(Boolean),
+    progress_current: Math.max(0, safeDraft.projectProgress || 0),
     progress_target: progressTarget
   };
 
-  const query = draft.id
-    ? supabase.from('study_sessions').update(payload).eq('id', draft.id).select('*').single()
+  const query = safeDraft.id
+    ? supabase.from('study_sessions').update(payload).eq('id', safeDraft.id).select('*').single()
     : supabase.from('study_sessions').insert({ ...payload, created_by: currentMemberId }).select('*').single();
   const { data, error } = await query;
 
@@ -779,8 +797,8 @@ async function saveSessionWithoutProjectColumns(draft: SessionDraft, currentMemb
 
   return {
     ...mapSession(data as DbSession),
-    projectId: draft.projectId,
-    projectProgress: draft.projectProgress
+    projectId: safeDraft.projectId,
+    projectProgress: safeDraft.projectProgress
   };
 }
 

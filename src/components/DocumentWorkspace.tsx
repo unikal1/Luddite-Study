@@ -19,7 +19,7 @@ type DocumentWorkspaceProps = {
   onUploadImage: (documentId: string, file: File) => Promise<string>;
 };
 
-const emptyBody = '# 새 문서\n\n';
+const emptyBody = '';
 
 export function DocumentWorkspace({
   kind,
@@ -720,7 +720,7 @@ function DocumentEditor({
             <span>{kind === 'material' ? '자료' : `${selectedSession?.week ?? ''}회차 발표`}</span>
             <b>{currentMember?.displayName ?? '작성자'}</b>
           </div>
-          <MarkdownView content={draft.body} />
+          <MarkdownView content={documentPreviewContent(draft)} />
         </section>
       </div>
 
@@ -856,6 +856,16 @@ function uniqueFolderSegment(segment: string, parentPath: string, folders: Docum
   }
 
   return candidate;
+}
+
+function documentPreviewContent(draft: DocumentDraft): string {
+  const title = draft.title.trim().replace(/\s+/g, ' ');
+
+  if (!title) {
+    return draft.body;
+  }
+
+  return `# ${title}\n\n${draft.body}`;
 }
 
 function createDraft(

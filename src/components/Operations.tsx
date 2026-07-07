@@ -23,6 +23,7 @@ import type {
 } from '../types';
 import { formatDate, formatDateRange, formatTimeRange, todayIso } from '../utils/dates';
 import { slugifyFileName } from '../utils/path';
+import { normalizeSessionDraftForSave, updateSessionDraftDate, type SessionDateField } from '../utils/sessionDraft';
 import { StatusBadge } from './StatusBadge';
 
 type OperationsSection = 'connection' | 'members' | 'sessions';
@@ -195,7 +196,11 @@ export function Operations({
   }
 
   async function saveSession() {
-    await run(isCurrentSessionSelected ? '현재 회차를 저장했습니다.' : '회차를 수정했습니다.', () => onSaveSession(sessionDraft));
+    await run(isCurrentSessionSelected ? '현재 회차를 저장했습니다.' : '회차를 수정했습니다.', () => onSaveSession(normalizeSessionDraftForSave(sessionDraft)));
+  }
+
+  function updateSessionDate(field: SessionDateField, value: string) {
+    setSessionDraft((current) => updateSessionDraftDate(current, field, value));
   }
 
   async function endSession() {
@@ -536,17 +541,17 @@ export function Operations({
                     <div className="form-grid">
                       <label>
                         시작일
-                        <input value={sessionDraft.startsOn} onChange={(event) => setSessionDraft({ ...sessionDraft, startsOn: event.target.value })} type="date" disabled={!canManage} />
+                        <input value={sessionDraft.startsOn} onChange={(event) => updateSessionDate('startsOn', event.target.value)} type="date" disabled={!canManage} />
                       </label>
                       <label>
                         종료일
-                        <input value={sessionDraft.endsOn} onChange={(event) => setSessionDraft({ ...sessionDraft, endsOn: event.target.value })} type="date" disabled={!canManage} />
+                        <input value={sessionDraft.endsOn} onChange={(event) => updateSessionDate('endsOn', event.target.value)} type="date" disabled={!canManage} />
                       </label>
                     </div>
                     <div className="form-grid">
                       <label>
                         발표일
-                        <input value={sessionDraft.presentationOn} onChange={(event) => setSessionDraft({ ...sessionDraft, presentationOn: event.target.value })} type="date" disabled={!canManage} />
+                        <input value={sessionDraft.presentationOn} onChange={(event) => updateSessionDate('presentationOn', event.target.value)} type="date" disabled={!canManage} />
                       </label>
                       <label>
                         진행자

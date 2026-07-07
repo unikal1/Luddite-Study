@@ -23,6 +23,7 @@ test('dashboard, document workspaces, and operations work on desktop', async ({ 
 
   await page.getByRole('button', { name: '자료 파일 추가' }).click();
   await page.getByLabel('제목').fill('브라우저 검증 노트');
+  await expect(page.getByRole('dialog').getByRole('heading', { name: '브라우저 검증 노트', level: 1 })).toBeVisible();
   await page.getByLabel('Markdown').fill('# 검증\n\n- [x] 자료 저장\n- [ ] 이미지 첨부');
   await page.getByRole('button', { name: '저장하기' }).click();
   await expect(page.getByRole('heading', { name: '브라우저 검증 노트', level: 2 })).toBeVisible();
@@ -80,6 +81,8 @@ test('dashboard, document workspaces, and operations work on desktop', async ({ 
   await expect(page.getByText('발표자를 저장했습니다.')).toBeVisible();
 
   await page.getByLabel('진행 페이지 수').fill('75');
+  await page.getByLabel('발표일').fill('2026-07-24');
+  await expect(page.getByLabel('종료일')).toHaveValue('2026-07-24');
   await page.getByLabel('목표').fill('회차 수정도 Supabase 저장 흐름으로 검증한다.');
   await page.getByRole('button', { name: '회차 저장' }).click();
   await expect(page.getByText('현재 회차를 저장했습니다.')).toBeVisible();
