@@ -213,7 +213,7 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
   return {
     projects,
     members: mappedMembers,
-    sessions: attachFallbackProject(mappedSessions, projects),
+    sessions: attachFallbackProject(stripLegacyProjectResources(mappedSessions), projects),
     folders: folders.map(mapFolder),
     documents: documents.map(mapDocument),
     progressTopics: progressTopics.map(mapProgress),
@@ -513,7 +513,7 @@ async function saveProjectWithoutProjectSchema(draft: ProjectDraft, currentMembe
     updatedAt: now
   };
 
-  writeLegacyProjectSnapshot(project);
+  await writeLegacyProjectSnapshot(currentSession, project);
   return project;
 }
 
@@ -599,7 +599,7 @@ function createFallbackProjects(sessions: StudySession[]): StudyProject[] {
   const current = sessions.find((session) => session.status === 'current') ?? ordered.at(-1) ?? ordered[0];
   const totalPages = Math.max(1, ...sessions.map((session) => Math.max(session.progressTarget, session.projectProgress)));
   const type = current.progressUnit === '%' ? 'free' : 'book';
-  const saved = readLegacyProjectSnapshot();
+  const saved = readLegacyProjectSnapshot(sessions);
 
   return [{
     id: 0,
@@ -833,22 +833,53 @@ function isMissingProjectSchemaError(error: unknown): boolean {
     message.includes('schema cache');
 }
 
-const legacyProjectStorageKey = 'luddite-study:legacy-project';
+const legacyProjectMetaPrefix = '__luddite_project_meta__:';
 
 type LegacyProjectSnapshot = Pick<StudyProject, 'title' | 'type' | 'totalPages' | 'imageUrl' | 'goal' | 'startsOn' | 'endsOn'>;
 
-function readLegacyProjectSnapshot(): LegacyProjectSnapshot | null {
-  if (typeof localStorage === 'undefined') {
-    return null;
+function readLegacyProjectSnapshot(sessions: StudySession[]): LegacyProjectSnapshot | null {
+  for (const resource of sessions.flatMap((session) => session.resources).filter(isLegacyProjectResource).reverse()) {
+    const snapshot = parseLegacyProjectResource(resource);
+    if (snapshot) {
+      return snapshot;
+    }
   }
 
-  try {
-    const raw = localStorage.getItem(legacyProjectStorageKey);
-    if (!raw) {
-      return null;
-    }
+  return readLegacyProjectSnapshotFromLocalStorage();
+}
 
-    const parsed = JSON.parse(raw) as Partial<LegacyProjectSnapshot>;
+async function writeLegacyProjectSnapshot(session: DbSession | undefined, project: LegacyProjectSnapshot): Promise<void> {
+  if (!session) {
+    return;
+  }
+
+  const resources = [
+    ...(session.resources ?? []).filter((resource) => !isLegacyProjectResource(resource)),
+    `${legacyProjectMetaPrefix}${encodeURIComponent(JSON.stringify(project))}`
+  ];
+  const { error } = await supabase.from('study_sessions').update({ resources }).eq('id', session.id);
+
+  if (error) {
+    throw error;
+  }
+
+  clearLegacyProjectLocalStorage();
+}
+
+function stripLegacyProjectResources(sessions: StudySession[]): StudySession[] {
+  return sessions.map((session) => ({
+    ...session,
+    resources: session.resources.filter((resource) => !isLegacyProjectResource(resource))
+  }));
+}
+
+function isLegacyProjectResource(resource: string): boolean {
+  return resource.startsWith(legacyProjectMetaPrefix);
+}
+
+function parseLegacyProjectResource(resource: string): LegacyProjectSnapshot | null {
+  try {
+    const parsed = JSON.parse(decodeURIComponent(resource.slice(legacyProjectMetaPrefix.length))) as Partial<LegacyProjectSnapshot>;
     return {
       title: typeof parsed.title === 'string' ? parsed.title : '',
       type: parsed.type === 'free' ? 'free' : 'book',
@@ -863,15 +894,43 @@ function readLegacyProjectSnapshot(): LegacyProjectSnapshot | null {
   }
 }
 
-function writeLegacyProjectSnapshot(project: LegacyProjectSnapshot): void {
+const legacyProjectStorageKey = 'luddite-study:legacy-project';
+
+function readLegacyProjectSnapshotFromLocalStorage(): LegacyProjectSnapshot | null {
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+
+  const raw = localStorage.getItem(legacyProjectStorageKey);
+  if (!raw) {
+    return null;
+  }
+
+  return parseLegacyProjectSnapshotJson(raw);
+}
+
+function clearLegacyProjectLocalStorage(): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
 
+  localStorage.removeItem(legacyProjectStorageKey);
+}
+
+function parseLegacyProjectSnapshotJson(raw: string): LegacyProjectSnapshot | null {
   try {
-    localStorage.setItem(legacyProjectStorageKey, JSON.stringify(project));
+    const parsed = JSON.parse(raw) as Partial<LegacyProjectSnapshot>;
+    return {
+      title: typeof parsed.title === 'string' ? parsed.title : '',
+      type: parsed.type === 'free' ? 'free' : 'book',
+      totalPages: typeof parsed.totalPages === 'number' && Number.isFinite(parsed.totalPages) ? parsed.totalPages : 1,
+      imageUrl: typeof parsed.imageUrl === 'string' ? parsed.imageUrl : '',
+      goal: typeof parsed.goal === 'string' ? parsed.goal : '',
+      startsOn: typeof parsed.startsOn === 'string' ? parsed.startsOn : '',
+      endsOn: typeof parsed.endsOn === 'string' ? parsed.endsOn : null
+    };
   } catch {
-    // localStorage is only a compatibility cache for pre-migration projects.
+    return null;
   }
 }
 
