@@ -2174,6 +2174,27 @@ textarea {
   line-height: 1.55;
 }
 
+@media (max-width: 1180px) {
+  .projects-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .project-progress-card,
+  .project-dashboard-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .project-detail-top {
+    display: grid;
+  }
+
+  .project-detail .tool-actions > * {
+    flex: 1 1 120px;
+  }
+}
+
 @media (max-width: 900px) {
   .top-nav {
     grid-template-columns: 1fr auto;

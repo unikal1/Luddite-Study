@@ -211,7 +211,10 @@ export function Operations({
       return;
     }
 
-    await run('회차를 삭제했습니다.', () => onDeleteSession(selectedSession.id));
+    await run('회차를 삭제했습니다.', async () => {
+      await onDeleteSession(selectedSession.id);
+      setSelectedSessionId(orderedSessions.find((session) => session.id !== selectedSession.id)?.id ?? null);
+    });
   }
 
   async function startNextSession() {
@@ -616,7 +619,7 @@ export function Operations({
                       <button className="secondary-button" type="button" onClick={() => void endSession()} disabled={!canManage || selectedSession.status === 'done'}>
                         종료
                       </button>
-                      <button className="danger-button" type="button" onClick={() => void removeSession()} disabled={!canManage || isCurrentSessionSelected}>
+                      <button className="danger-button" type="button" onClick={() => void removeSession()} disabled={!canManage}>
                         <Trash2 size={18} aria-hidden="true" />
                         삭제
                       </button>

@@ -470,13 +470,17 @@ export async function markProjectDone(projectId: number): Promise<void> {
 }
 
 export async function deleteProject(projectId: number): Promise<void> {
-  const { error } = await supabase.from('study_projects').delete().eq('id', projectId);
+  const { data, error } = await supabase.from('study_projects').delete().eq('id', projectId).select('id');
 
   if (error) {
     if (isMissingProjectSchemaError(error)) {
       throw new Error('Supabase 프로젝트 migration이 아직 적용되지 않았습니다.');
     }
     throw error;
+  }
+
+  if (!data?.length) {
+    throw new Error('삭제할 프로젝트를 찾지 못했거나 삭제 권한이 없습니다.');
   }
 }
 
@@ -524,8 +528,7 @@ async function selectProjects(sessions: StudySession[]): Promise<StudyProject[]>
     throw error;
   }
 
-  const projects = (data ?? []).map((row) => mapProject(row as DbProject));
-  return projects.length > 0 ? projects : createFallbackProjects(sessions);
+  return (data ?? []).map((row) => mapProject(row as DbProject));
 }
 
 function createFallbackProjects(sessions: StudySession[]): StudyProject[] {
@@ -571,7 +574,15 @@ export async function markSessionDone(sessionId: number): Promise<void> {
 }
 
 export async function deleteSession(sessionId: number): Promise<void> {
-  await assertMutation(supabase.from('study_sessions').delete().eq('id', sessionId));
+  const { data, error } = await supabase.from('study_sessions').delete().eq('id', sessionId).select('id');
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data?.length) {
+    throw new Error('삭제할 회차를 찾지 못했거나 삭제 권한이 없습니다.');
+  }
 }
 
 export async function chooseSessionPresenters(sessionId: number, presenterIds: string[]): Promise<void> {

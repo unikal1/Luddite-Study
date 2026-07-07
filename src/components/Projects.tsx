@@ -54,8 +54,10 @@ export function Projects({ data, canManage, onDeleteProject, onEndProject, onSav
       return;
     }
 
-    await run('프로젝트를 삭제했습니다.', () => onDeleteProject(selectedProject.id));
-    setSelectedProjectId(orderedProjects.find((project) => project.id !== selectedProject.id)?.id ?? 'new');
+    await run('프로젝트를 삭제했습니다.', async () => {
+      await onDeleteProject(selectedProject.id);
+      setSelectedProjectId(orderedProjects.find((project) => project.id !== selectedProject.id)?.id ?? 'new');
+    });
   }
 
   async function run(successMessage: string, action: () => Promise<void>) {
@@ -206,7 +208,7 @@ export function Projects({ data, canManage, onDeleteProject, onEndProject, onSav
                 <button className="secondary-button" type="button" onClick={() => void endProject()} disabled={!canManage || selectedProject.status === 'done'}>
                   종료
                 </button>
-                <button className="danger-button" type="button" onClick={() => void removeProject()} disabled={!canManage || selectedProject.status === 'current'}>
+                <button className="danger-button" type="button" onClick={() => void removeProject()} disabled={!canManage}>
                   <Trash2 size={18} aria-hidden="true" />
                   삭제
                 </button>

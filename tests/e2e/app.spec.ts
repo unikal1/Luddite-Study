@@ -54,7 +54,7 @@ test('dashboard, document workspaces, and operations work on desktop', async ({ 
   await page.getByRole('button', { name: '저장하기' }).click();
   await expect(page.getByRole('heading', { name: '당일 발표 메모', level: 2 })).toBeVisible();
 
-  await page.getByRole('button', { name: '운영', exact: true }).click();
+  await page.getByLabel('주요 메뉴').getByRole('button', { name: '운영', exact: true }).click();
   await expect(page.getByRole('heading', { name: '스터디 운영 보드' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Supabase 연결 상태' })).toBeVisible();
 
@@ -98,6 +98,23 @@ test('mobile viewport keeps the primary flows reachable', async ({ page }, testI
   await expect(page.getByRole('heading', { name: '발표실' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'DevTools Performance 실습', level: 2 })).toBeVisible();
   await page.screenshot({ path: `test-results/${testInfo.project.name}-mobile-presentation.png`, fullPage: true });
+});
+
+test('current session and project can be deleted without blocking the page', async ({ page }) => {
+  await page.goto('./?demo=1#dashboard');
+
+  await page.getByLabel('주요 메뉴').getByRole('button', { name: '운영', exact: true }).click();
+  await page.getByRole('button', { name: '회차 관리' }).click();
+  await expect(page.getByRole('button', { name: /3회차.*브라우저/ })).toBeVisible();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await expect(page.getByText('회차를 삭제했습니다.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /3회차.*브라우저/ })).not.toBeVisible();
+
+  await page.getByLabel('주요 메뉴').getByRole('button', { name: '프로젝트', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '웹 성능 최적화 가이드' })).toBeVisible();
+  await page.getByRole('button', { name: '삭제', exact: true }).click();
+  await expect(page.getByText('프로젝트를 삭제했습니다.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /웹 성능 최적화 가이드/ })).not.toBeVisible();
 });
 
 test('primary demo pages have no detectable accessibility violations', async ({ page }) => {

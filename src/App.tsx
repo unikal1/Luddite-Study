@@ -96,18 +96,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [demoMode]);
 
-  async function refresh(session = authSession) {
+  async function refresh(session = authSession, options: { showLoader?: boolean } = {}) {
     if (demoMode) {
       return;
     }
 
     if (!session) {
       setData(null);
-      setLoading(false);
+      if (options.showLoader ?? true) {
+        setLoading(false);
+      }
       return;
     }
 
-    setLoading(true);
+    const showLoader = options.showLoader ?? true;
+    if (showLoader) {
+      setLoading(true);
+    }
     setLoadError('');
 
     try {
@@ -115,7 +120,9 @@ export default function App() {
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : '데이터를 불러오지 못했습니다.');
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   }
 
@@ -332,16 +339,18 @@ export default function App() {
 
   async function handleDeleteProject(projectId: number): Promise<void> {
     if (demoMode) {
-      setData((current) => current ? {
-        ...current,
-        projects: current.projects.filter((project) => project.id !== projectId),
-        sessions: current.sessions.map((session) => session.projectId === projectId ? { ...session, projectId: null, projectProgress: 0 } : session)
-      } : current);
+      removeProjectFromState(projectId);
+      return;
+    }
+
+    if (projectId === 0) {
+      removeProjectFromState(projectId);
       return;
     }
 
     await deleteProject(projectId);
-    await refresh();
+    removeProjectFromState(projectId);
+    await refresh(authSession, { showLoader: false });
   }
 
   async function handleSaveSession(draft: SessionDraft): Promise<void> {
@@ -397,18 +406,31 @@ export default function App() {
 
   async function handleDeleteSession(sessionId: number): Promise<void> {
     if (demoMode) {
-      setData((current) => current ? {
-        ...current,
-        sessions: current.sessions.filter((session) => session.id !== sessionId),
-        folders: current.folders.filter((folder) => folder.sessionId !== sessionId),
-        documents: current.documents.map((document) => document.sessionId === sessionId ? { ...document, sessionId: null } : document),
-        penalties: current.penalties.map((penalty) => penalty.sessionId === sessionId ? { ...penalty, sessionId: null } : penalty)
-      } : current);
+      removeSessionFromState(sessionId);
       return;
     }
 
     await deleteSession(sessionId);
-    await refresh();
+    removeSessionFromState(sessionId);
+    await refresh(authSession, { showLoader: false });
+  }
+
+  function removeProjectFromState(projectId: number) {
+    setData((current) => current ? {
+      ...current,
+      projects: current.projects.filter((project) => project.id !== projectId),
+      sessions: current.sessions.map((session) => session.projectId === projectId ? { ...session, projectId: null, projectProgress: 0 } : session)
+    } : current);
+  }
+
+  function removeSessionFromState(sessionId: number) {
+    setData((current) => current ? {
+      ...current,
+      sessions: current.sessions.filter((session) => session.id !== sessionId),
+      folders: current.folders.filter((folder) => folder.sessionId !== sessionId),
+      documents: current.documents.map((document) => document.sessionId === sessionId ? { ...document, sessionId: null } : document),
+      penalties: current.penalties.map((penalty) => penalty.sessionId === sessionId ? { ...penalty, sessionId: null } : penalty)
+    } : current);
   }
 
   async function handleChoosePresenters(sessionId: number, presenterIds: string[]): Promise<void> {

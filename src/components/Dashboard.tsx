@@ -10,6 +10,21 @@ type DashboardProps = {
 
 export function Dashboard({ data, onNavigate }: DashboardProps) {
   const currentSession = getCurrentSession(data.sessions);
+
+  if (!currentSession) {
+    return (
+      <div className="dashboard">
+        <section className="panel wide-panel">
+          <div className="section-heading">
+            <CalendarDays size={18} aria-hidden="true" />
+            <h1>회차가 없습니다</h1>
+          </div>
+          <p className="empty-state">운영 탭에서 새 회차를 시작하세요.</p>
+        </section>
+      </div>
+    );
+  }
+
   const currentProject = data.projects.find((project) => project.status === 'current') ??
     data.projects.find((project) => project.id === currentSession.projectId) ??
     data.projects[0] ??
@@ -142,10 +157,11 @@ export function Dashboard({ data, onNavigate }: DashboardProps) {
   );
 }
 
-function getCurrentSession(sessions: StudySession[]): StudySession {
+function getCurrentSession(sessions: StudySession[]): StudySession | null {
   return sessions.find((session) => session.status === 'current') ??
     sessions.find((session) => session.status === 'upcoming') ??
-    sessions[0];
+    sessions[0] ??
+    null;
 }
 
 function findMember(members: StudyMember[], memberId?: string | null): StudyMember | undefined {
