@@ -498,7 +498,7 @@ async function saveProjectWithoutProjectSchema(draft: ProjectDraft, currentMembe
   }
 
   const now = new Date().toISOString();
-  return {
+  const project = {
     id: 0,
     title,
     type: draft.type,
@@ -512,6 +512,9 @@ async function saveProjectWithoutProjectSchema(draft: ProjectDraft, currentMembe
     createdAt: currentSession?.created_at ?? now,
     updatedAt: now
   };
+
+  writeLegacyProjectSnapshot(project);
+  return project;
 }
 
 export async function markProjectDone(projectId: number): Promise<void> {
@@ -596,17 +599,18 @@ function createFallbackProjects(sessions: StudySession[]): StudyProject[] {
   const current = sessions.find((session) => session.status === 'current') ?? ordered.at(-1) ?? ordered[0];
   const totalPages = Math.max(1, ...sessions.map((session) => Math.max(session.progressTarget, session.projectProgress)));
   const type = current.progressUnit === '%' ? 'free' : 'book';
+  const saved = readLegacyProjectSnapshot();
 
   return [{
     id: 0,
-    title: current.progressLabel || '스터디 프로젝트',
-    type,
+    title: current.progressLabel || saved?.title || '스터디 프로젝트',
+    type: saved?.type ?? type,
     status: 'current',
-    totalPages,
-    imageUrl: '',
-    goal: current.goal,
-    startsOn: ordered[0].startsOn,
-    endsOn: null,
+    totalPages: Math.max(1, saved?.totalPages ?? totalPages),
+    imageUrl: saved?.imageUrl ?? '',
+    goal: current.goal || saved?.goal || '',
+    startsOn: saved?.startsOn || ordered[0].startsOn,
+    endsOn: saved?.endsOn ?? null,
     createdBy: current.createdBy,
     createdAt: current.createdAt,
     updatedAt: current.updatedAt
@@ -827,6 +831,48 @@ function isMissingProjectSchemaError(error: unknown): boolean {
     message.includes('project_progress') ||
     message.includes('Could not find the') ||
     message.includes('schema cache');
+}
+
+const legacyProjectStorageKey = 'luddite-study:legacy-project';
+
+type LegacyProjectSnapshot = Pick<StudyProject, 'title' | 'type' | 'totalPages' | 'imageUrl' | 'goal' | 'startsOn' | 'endsOn'>;
+
+function readLegacyProjectSnapshot(): LegacyProjectSnapshot | null {
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem(legacyProjectStorageKey);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<LegacyProjectSnapshot>;
+    return {
+      title: typeof parsed.title === 'string' ? parsed.title : '',
+      type: parsed.type === 'free' ? 'free' : 'book',
+      totalPages: typeof parsed.totalPages === 'number' && Number.isFinite(parsed.totalPages) ? parsed.totalPages : 1,
+      imageUrl: typeof parsed.imageUrl === 'string' ? parsed.imageUrl : '',
+      goal: typeof parsed.goal === 'string' ? parsed.goal : '',
+      startsOn: typeof parsed.startsOn === 'string' ? parsed.startsOn : '',
+      endsOn: typeof parsed.endsOn === 'string' ? parsed.endsOn : null
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeLegacyProjectSnapshot(project: LegacyProjectSnapshot): void {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+
+  try {
+    localStorage.setItem(legacyProjectStorageKey, JSON.stringify(project));
+  } catch {
+    // localStorage is only a compatibility cache for pre-migration projects.
+  }
 }
 
 function mapFolder(row: DbFolder): DocumentFolder {
