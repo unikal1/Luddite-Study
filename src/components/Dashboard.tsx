@@ -116,7 +116,7 @@ export function Dashboard({ data, onNavigate }: DashboardProps) {
         {currentProject && projectProgressValue ? (
           <>
             <div className="project-dashboard-summary">
-              {currentProject.imageUrl ? <img src={currentProject.imageUrl} alt="" /> : null}
+              {currentProject.imageUrl ? <img src={currentProject.imageUrl} alt="" /> : <div className="project-image-placeholder" aria-hidden="true"><BookOpen size={26} /></div>}
               <div>
                 <div className="status-row">
                   <span>{projectTypeLabel(currentProject)}</span>
