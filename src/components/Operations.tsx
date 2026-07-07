@@ -219,9 +219,10 @@ export function Operations({
 
   async function startNextSession() {
     const baseDate = todayIso();
+    const baseDraft = selectedSession ? sessionDraft : createSessionDraft(nextWeek, currentProject?.id ?? null);
     await run('새 회차를 시작했습니다.', async () => {
       await onStartSession({
-        ...sessionDraft,
+        ...baseDraft,
         id: undefined,
         title: `${nextWeek}회차`,
         week: nextWeek,
@@ -626,7 +627,13 @@ export function Operations({
                     </div>
                   </div>
                 ) : (
-                  <p className="empty-state">회차가 없습니다.</p>
+                  <div className="empty-action-panel">
+                    <p className="empty-state">회차가 없습니다.</p>
+                    <button className="primary-button fit-button" type="button" onClick={() => void startNextSession()} disabled={!canManage}>
+                      <CalendarPlus size={18} aria-hidden="true" />
+                      새 회차 시작
+                    </button>
+                  </div>
                 )}
               </div>
             </section>

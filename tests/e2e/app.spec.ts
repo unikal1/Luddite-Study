@@ -117,14 +117,32 @@ test('current session and project can be deleted without blocking the page', asy
   await expect(page.getByRole('button', { name: /웹 성능 최적화 가이드/ })).not.toBeVisible();
 });
 
+test('a new session can be started from the empty session state', async ({ page }) => {
+  await page.goto('./?demo=1#operations');
+
+  await page.getByRole('button', { name: '회차 관리' }).click();
+  for (const sessionName of [/3회차.*브라우저/, /1회차.*운영/, /2회차.*TypeScript/]) {
+    await page.getByRole('button', { name: sessionName }).click();
+    await page.getByRole('button', { name: '삭제', exact: true }).click();
+    await expect(page.getByText('회차를 삭제했습니다.')).toBeVisible();
+  }
+
+  await expect(page.getByText('회차가 없습니다.')).toBeVisible();
+  await page.getByRole('button', { name: '새 회차 시작' }).click();
+  await expect(page.getByText('새 회차를 시작했습니다.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /1회차/ })).toBeVisible();
+});
+
 test('primary demo pages have no detectable accessibility violations', async ({ page }) => {
   await page.goto('./?demo=1#dashboard');
+  await expect(page.locator('main')).toBeVisible();
 
   for (const route of ['대시보드', '프로젝트', '자료', '발표', '운영']) {
     if (route !== '대시보드') {
       await page.getByRole('button', { name: route, exact: true }).click();
     }
 
+    await expect(page.locator('main')).toBeVisible();
     const scan = await new AxeBuilder({ page }).analyze();
     expect(scan.violations).toEqual([]);
   }

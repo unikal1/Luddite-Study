@@ -1492,6 +1492,16 @@ textarea {
   color: var(--muted);
 }
 
+.empty-action-panel {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 16px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
