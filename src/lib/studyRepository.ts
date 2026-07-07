@@ -8,15 +8,21 @@ import type {
   FolderDraft,
   FolderUpdateDraft,
   MemberDraft,
+  MemberUpdateDraft,
   MemberRole,
   Penalty,
+  ProjectDraft,
+  ProjectStatus,
+  ProjectType,
   ProgressTopic,
   SessionDraft,
   StudyData,
   StudyDocument,
   StudyMember,
+  StudyProject,
   StudySession
 } from '../types';
+import { todayIso } from '../utils/dates';
 import { slugifyFileName } from '../utils/path';
 
 type DbMember = {
@@ -36,8 +42,24 @@ type DbMember = {
   updated_at: string;
 };
 
+type DbProject = {
+  id: number;
+  title: string;
+  type: ProjectType;
+  status: ProjectStatus;
+  total_pages: number;
+  image_url: string;
+  goal: string;
+  starts_on: string;
+  ends_on: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type DbSession = {
   id: number;
+  project_id: number | null;
   title: string;
   week: number;
   status: StudySession['status'];
@@ -56,6 +78,7 @@ type DbSession = {
   progress_current: number;
   progress_target: number;
   progress_unit: string;
+  project_progress: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -161,6 +184,7 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
   }
 
   const [
+    projects,
     members,
     sessions,
     folders,
@@ -170,6 +194,7 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
     activityEvents,
     attachments
   ] = await Promise.all([
+    selectRows<DbProject>('study_projects', 'starts_on', false),
     selectRows<DbMember>('study_members', 'display_name'),
     selectRows<DbSession>('study_sessions', 'week'),
     selectRows<DbFolder>('document_folders', 'path'),
@@ -186,6 +211,7 @@ export async function loadStudyData(authSession: Session | null): Promise<StudyD
     ?? null;
 
   return {
+    projects: projects.map(mapProject),
     members: mappedMembers,
     sessions: sessions.map(mapSession),
     folders: folders.map(mapFolder),
@@ -219,6 +245,7 @@ async function getStudyAccessContext(): Promise<AccessContext> {
 
 function emptyStudyData(bootstrapOpen: boolean): StudyData {
   return {
+    projects: [],
     members: [],
     sessions: [],
     folders: [],
@@ -346,6 +373,23 @@ export async function updateFolder(
   return mapFolder(data as DbFolder);
 }
 
+export async function deleteFolder(folder: DocumentFolder, folders: DocumentFolder[], documents: StudyDocument[]): Promise<void> {
+  const folderIds = folders
+    .filter((item) => item.id === folder.id || isChildPath(item.path, folder.path))
+    .map((item) => item.id);
+  const documentIds = documents
+    .filter((document) => document.path.startsWith(`${folder.path}/`))
+    .map((document) => document.id);
+
+  if (documentIds.length > 0) {
+    await assertMutation(supabase.from('documents').delete().in('id', documentIds));
+  }
+
+  if (folderIds.length > 0) {
+    await assertMutation(supabase.from('document_folders').delete().in('id', folderIds));
+  }
+}
+
 export async function saveMember(draft: MemberDraft): Promise<StudyMember> {
   const memberUid = slugifyFileName(draft.memberUid);
   const payload = {
@@ -369,8 +413,59 @@ export async function saveMember(draft: MemberDraft): Promise<StudyMember> {
   return mapMember(data as DbMember);
 }
 
+export async function updateMember(draft: MemberUpdateDraft): Promise<StudyMember> {
+  const { data, error } = await supabase.from('study_members').update({
+    display_name: draft.displayName.trim(),
+    role: draft.role,
+    role_label: roleLabel(draft.role)
+  }).eq('id', draft.id).select('*').single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapMember(data as DbMember);
+}
+
+export async function deleteMember(memberId: string): Promise<void> {
+  await assertMutation(supabase.from('study_members').delete().eq('id', memberId));
+}
+
+export async function saveProject(draft: ProjectDraft, currentMemberId: string): Promise<StudyProject> {
+  const payload = {
+    title: draft.title.trim() || '새 프로젝트',
+    type: draft.type,
+    status: draft.status,
+    total_pages: Math.max(1, draft.totalPages || 1),
+    image_url: draft.imageUrl.trim(),
+    goal: draft.goal.trim(),
+    starts_on: draft.startsOn,
+    ends_on: draft.endsOn || null
+  };
+
+  const query = draft.id
+    ? supabase.from('study_projects').update(payload).eq('id', draft.id).select('*').single()
+    : supabase.from('study_projects').insert({ ...payload, created_by: currentMemberId }).select('*').single();
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return mapProject(data as DbProject);
+}
+
+export async function markProjectDone(projectId: number): Promise<void> {
+  await assertMutation(supabase.from('study_projects').update({ status: 'done', ends_on: todayIso() }).eq('id', projectId));
+}
+
+export async function deleteProject(projectId: number): Promise<void> {
+  await assertMutation(supabase.from('study_projects').delete().eq('id', projectId));
+}
+
 export async function saveSession(draft: SessionDraft, currentMemberId: string): Promise<StudySession> {
   const payload = {
+    project_id: draft.projectId,
     title: draft.title.trim() || `${draft.week}회차`,
     week: draft.week,
     status: draft.status,
@@ -382,7 +477,8 @@ export async function saveSession(draft: SessionDraft, currentMemberId: string):
     location: draft.location.trim() || 'Discord',
     goal: draft.goal.trim(),
     facilitator_member_id: draft.facilitatorMemberId,
-    agenda: draft.agenda.filter(Boolean)
+    agenda: draft.agenda.filter(Boolean),
+    project_progress: Math.max(0, draft.projectProgress || 0)
   };
 
   const query = draft.id
@@ -399,6 +495,10 @@ export async function saveSession(draft: SessionDraft, currentMemberId: string):
 
 export async function markSessionDone(sessionId: number): Promise<void> {
   await assertMutation(supabase.from('study_sessions').update({ status: 'done' }).eq('id', sessionId));
+}
+
+export async function deleteSession(sessionId: number): Promise<void> {
+  await assertMutation(supabase.from('study_sessions').delete().eq('id', sessionId));
 }
 
 export async function chooseSessionPresenters(sessionId: number, presenterIds: string[]): Promise<void> {
@@ -481,9 +581,27 @@ function mapMember(row: DbMember): StudyMember {
   };
 }
 
+function mapProject(row: DbProject): StudyProject {
+  return {
+    id: row.id,
+    title: row.title,
+    type: row.type,
+    status: row.status,
+    totalPages: row.total_pages,
+    imageUrl: row.image_url,
+    goal: row.goal,
+    startsOn: row.starts_on,
+    endsOn: row.ends_on,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 function mapSession(row: DbSession): StudySession {
   return {
     id: row.id,
+    projectId: row.project_id,
     title: row.title,
     week: row.week,
     status: row.status,
@@ -502,6 +620,7 @@ function mapSession(row: DbSession): StudySession {
     progressCurrent: row.progress_current,
     progressTarget: row.progress_target,
     progressUnit: row.progress_unit,
+    projectProgress: row.project_progress ?? 0,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at

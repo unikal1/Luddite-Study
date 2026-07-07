@@ -6,25 +6,34 @@ import { BootstrapPanel } from './components/BootstrapPanel';
 import { Dashboard } from './components/Dashboard';
 import { DocumentWorkspace } from './components/DocumentWorkspace';
 import { Operations } from './components/Operations';
+import { Projects } from './components/Projects';
 import { createDemoData } from './lib/demoData';
 import {
   chooseSessionPresenters,
   createBootstrapOwner,
   createFolder,
   deleteDocument,
+  deleteFolder,
+  deleteMember,
+  deleteProject,
+  deleteSession,
   loadStudyData,
+  markProjectDone,
   markSessionDone,
   saveDocument,
   saveMember,
+  saveProject,
   saveSession,
+  updateMember,
   updateFolder,
   uploadDocumentImage
 } from './lib/studyRepository';
 import { supabase } from './lib/supabase';
-import type { DocumentDraft, DocumentFolder, FolderDraft, FolderUpdateDraft, MemberDraft, RouteKey, SessionDraft, StudyData, StudyDocument, StudyMember, StudySession } from './types';
+import type { DocumentDraft, DocumentFolder, FolderDraft, FolderUpdateDraft, MemberDraft, MemberUpdateDraft, ProjectDraft, RouteKey, SessionDraft, StudyData, StudyDocument, StudyMember, StudyProject, StudySession } from './types';
 
 const routes: Array<{ key: RouteKey; label: string; icon: React.ReactNode }> = [
   { key: 'dashboard', label: '대시보드', icon: <Gauge size={18} /> },
+  { key: 'projects', label: '프로젝트', icon: <BookOpen size={18} /> },
   { key: 'materials', label: '자료', icon: <BookOpen size={18} /> },
   { key: 'presentations', label: '발표', icon: <Presentation size={18} /> },
   { key: 'operations', label: '운영', icon: <ClipboardList size={18} /> }
@@ -187,6 +196,24 @@ export default function App() {
     return folder;
   }
 
+  async function handleDeleteFolder(folder: DocumentFolder): Promise<void> {
+    if (demoMode) {
+      setData((current) => current ? {
+        ...current,
+        folders: current.folders.filter((item) => item.id !== folder.id && !item.path.startsWith(`${folder.path}/`)),
+        documents: current.documents.filter((document) => !document.path.startsWith(`${folder.path}/`))
+      } : current);
+      return;
+    }
+
+    if (!data) {
+      throw new Error('삭제할 폴더 정보를 찾을 수 없습니다.');
+    }
+
+    await deleteFolder(folder, data.folders, data.documents);
+    await refresh();
+  }
+
   async function handleUploadImage(documentId: string, file: File): Promise<string> {
     if (demoMode) {
       return URL.createObjectURL(file);
@@ -225,6 +252,95 @@ export default function App() {
     }
 
     await saveMember(draft);
+    await refresh();
+  }
+
+  async function handleUpdateMember(draft: MemberUpdateDraft): Promise<void> {
+    if (demoMode) {
+      const now = new Date().toISOString();
+      setData((current) => current ? {
+        ...current,
+        members: current.members.map((member) => member.id === draft.id ? {
+          ...member,
+          displayName: draft.displayName,
+          role: draft.role,
+          roleLabel: roleLabel(draft.role),
+          updatedAt: now
+        } : member)
+      } : current);
+      return;
+    }
+
+    await updateMember(draft);
+    await refresh();
+  }
+
+  async function handleDeleteMember(memberId: string): Promise<void> {
+    if (demoMode) {
+      setData((current) => current ? {
+        ...current,
+        members: current.members.filter((member) => member.id !== memberId),
+        sessions: current.sessions.map((session) => ({
+          ...session,
+          facilitatorMemberId: session.facilitatorMemberId === memberId ? null : session.facilitatorMemberId,
+          presenterMemberIds: session.presenterMemberIds.filter((id) => id !== memberId)
+        })),
+        folders: current.folders.map((folder) => folder.ownerMemberId === memberId ? { ...folder, ownerMemberId: null } : folder),
+        documents: current.documents.map((document) => document.ownerMemberId === memberId ? { ...document, ownerMemberId: null } : document)
+      } : current);
+      return;
+    }
+
+    await deleteMember(memberId);
+    await refresh();
+  }
+
+  async function handleSaveProject(draft: ProjectDraft): Promise<void> {
+    if (demoMode) {
+      mutateDemoProject(draft);
+      return;
+    }
+
+    if (!currentMember || !data) {
+      throw new Error('활성 멤버만 프로젝트를 저장할 수 있습니다.');
+    }
+
+    if (draft.status === 'current') {
+      const currentProject = data.projects.find((project) => project.status === 'current' && project.id !== draft.id);
+      if (currentProject) {
+        await markProjectDone(currentProject.id);
+      }
+    }
+
+    await saveProject(draft, currentMember.id);
+    await refresh();
+  }
+
+  async function handleEndProject(projectId: number): Promise<void> {
+    if (demoMode) {
+      const today = new Date().toISOString().slice(0, 10);
+      setData((current) => current ? {
+        ...current,
+        projects: current.projects.map((project) => project.id === projectId ? { ...project, status: 'done' as const, endsOn: today, updatedAt: new Date().toISOString() } : project)
+      } : current);
+      return;
+    }
+
+    await markProjectDone(projectId);
+    await refresh();
+  }
+
+  async function handleDeleteProject(projectId: number): Promise<void> {
+    if (demoMode) {
+      setData((current) => current ? {
+        ...current,
+        projects: current.projects.filter((project) => project.id !== projectId),
+        sessions: current.sessions.map((session) => session.projectId === projectId ? { ...session, projectId: null, projectProgress: 0 } : session)
+      } : current);
+      return;
+    }
+
+    await deleteProject(projectId);
     await refresh();
   }
 
@@ -276,6 +392,22 @@ export default function App() {
     }
 
     await markSessionDone(sessionId);
+    await refresh();
+  }
+
+  async function handleDeleteSession(sessionId: number): Promise<void> {
+    if (demoMode) {
+      setData((current) => current ? {
+        ...current,
+        sessions: current.sessions.filter((session) => session.id !== sessionId),
+        folders: current.folders.filter((folder) => folder.sessionId !== sessionId),
+        documents: current.documents.map((document) => document.sessionId === sessionId ? { ...document, sessionId: null } : document),
+        penalties: current.penalties.map((penalty) => penalty.sessionId === sessionId ? { ...penalty, sessionId: null } : penalty)
+      } : current);
+      return;
+    }
+
+    await deleteSession(sessionId);
     await refresh();
   }
 
@@ -352,6 +484,15 @@ export default function App() {
 
       <main className="app-main">
         {route === 'dashboard' ? <Dashboard data={data} onNavigate={navigate} /> : null}
+        {route === 'projects' ? (
+          <Projects
+            canManage={canManage}
+            data={data}
+            onDeleteProject={handleDeleteProject}
+            onEndProject={handleEndProject}
+            onSaveProject={handleSaveProject}
+          />
+        ) : null}
         {route === 'materials' ? (
           <DocumentWorkspace
             canWrite={canWrite}
@@ -360,6 +501,7 @@ export default function App() {
             kind="material"
             onCreateFolder={handleCreateFolder}
             onDeleteDocument={handleDeleteDocument}
+            onDeleteFolder={handleDeleteFolder}
             onUpdateFolder={handleUpdateFolder}
             onSaveDocument={handleSaveDocument}
             onUploadImage={handleUploadImage}
@@ -373,6 +515,7 @@ export default function App() {
             kind="presentation"
             onCreateFolder={handleCreateFolder}
             onDeleteDocument={handleDeleteDocument}
+            onDeleteFolder={handleDeleteFolder}
             onUpdateFolder={handleUpdateFolder}
             onSaveDocument={handleSaveDocument}
             onUploadImage={handleUploadImage}
@@ -382,11 +525,15 @@ export default function App() {
           <Operations
             canManage={canManage}
             data={data}
+            isDemo={demoMode}
             onAddMember={handleAddMember}
             onChoosePresenters={handleChoosePresenters}
+            onDeleteMember={handleDeleteMember}
+            onDeleteSession={handleDeleteSession}
             onEndSession={handleEndSession}
             onSaveSession={handleSaveSession}
             onStartSession={handleStartSession}
+            onUpdateMember={handleUpdateMember}
           />
         ) : null}
       </main>
@@ -493,6 +640,41 @@ export default function App() {
       sessions: current.sessions.map((session) => session.id === draft.id ? demoSessionFromDraft(draft, current.currentMember, session) : session)
     } : current);
   }
+
+  function mutateDemoProject(draft: ProjectDraft) {
+    const now = new Date().toISOString();
+    setData((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const saved: StudyProject = {
+        id: draft.id ?? Math.floor(Date.now() / 1000),
+        title: draft.title || '새 프로젝트',
+        type: draft.type,
+        status: draft.status,
+        totalPages: Math.max(1, draft.totalPages || 1),
+        imageUrl: draft.imageUrl,
+        goal: draft.goal,
+        startsOn: draft.startsOn,
+        endsOn: draft.endsOn,
+        createdBy: current.currentMember?.id ?? null,
+        createdAt: draft.id ? current.projects.find((project) => project.id === draft.id)?.createdAt ?? now : now,
+        updatedAt: now
+      };
+
+      const projects = draft.id
+        ? current.projects.map((project) => project.id === draft.id ? saved : project)
+        : [...current.projects, saved];
+
+      return {
+        ...current,
+        projects: saved.status === 'current'
+          ? projects.map((project) => project.id === saved.id ? project : project.status === 'current' ? { ...project, status: 'done' as const, endsOn: saved.startsOn, updatedAt: now } : project)
+          : projects
+      };
+    });
+  }
 }
 
 function AccessDeniedPanel({ identifier, onSignOut }: { identifier: string; onSignOut: () => Promise<void> }) {
@@ -529,6 +711,7 @@ function demoSessionFromDraft(draft: SessionDraft, member: StudyMember | null, p
   const now = new Date().toISOString();
   return {
     id: previous?.id ?? Math.floor(Date.now() / 1000),
+    projectId: draft.projectId,
     title: draft.title,
     week: draft.week,
     status: draft.status,
@@ -547,10 +730,18 @@ function demoSessionFromDraft(draft: SessionDraft, member: StudyMember | null, p
     progressCurrent: previous?.progressCurrent ?? 0,
     progressTarget: previous?.progressTarget ?? 1,
     progressUnit: previous?.progressUnit ?? '개',
+    projectProgress: draft.projectProgress,
     createdBy: previous?.createdBy ?? member?.id ?? null,
     createdAt: previous?.createdAt ?? now,
     updatedAt: now
   };
+}
+
+function roleLabel(role: StudyMember['role']): string {
+  if (role === 'owner') return '운영자';
+  if (role === 'admin') return '관리자';
+  if (role === 'facilitator') return '진행자';
+  return '스터디원';
 }
 
 

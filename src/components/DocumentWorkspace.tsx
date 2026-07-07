@@ -1,5 +1,4 @@
-﻿import { Check, FilePlus2, FolderPlus, ImagePlus, Pencil, Search, Trash2 } from 'lucide-react';
-import { FileText, Folder } from 'lucide-react';
+﻿import { Bold, Check, Code2, FilePlus2, FileText, Folder, FolderPlus, Heading1, Heading2, ImagePlus, Italic, Link, List, Pencil, Quote, Search, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type RefObject } from 'react';
 import type { DocumentDraft, DocumentFolder, DocumentKind, FolderDraft, FolderUpdateDraft, StudyData, StudyDocument, StudyMember, StudySession } from '../types';
 import { formatDate } from '../utils/dates';
@@ -14,6 +13,7 @@ type DocumentWorkspaceProps = {
   canWrite: boolean;
   onSaveDocument: (draft: DocumentDraft) => Promise<StudyDocument>;
   onDeleteDocument: (documentId: string) => Promise<void>;
+  onDeleteFolder: (folder: DocumentFolder) => Promise<void>;
   onCreateFolder: (draft: FolderDraft) => Promise<DocumentFolder>;
   onUpdateFolder: (draft: FolderUpdateDraft) => Promise<DocumentFolder>;
   onUploadImage: (documentId: string, file: File) => Promise<string>;
@@ -28,6 +28,7 @@ export function DocumentWorkspace({
   canWrite,
   onSaveDocument,
   onDeleteDocument,
+  onDeleteFolder,
   onCreateFolder,
   onUpdateFolder,
   onUploadImage
@@ -70,6 +71,10 @@ export function DocumentWorkspace({
   const [draft, setDraft] = useState<DocumentDraft>(() => createDraft(kind, currentMember, sessions.find((session) => session.id === defaultSessionId) ?? null));
 
   useEffect(() => {
+    if (editing) {
+      return;
+    }
+
     if (visibleDocs.length === 0) {
       setSelectedId('');
       return;
@@ -82,7 +87,7 @@ export function DocumentWorkspace({
     if (!visibleDocs.some((doc) => doc.id === selectedId)) {
       setSelectedId(visibleDocs[0].id);
     }
-  }, [selectedFolderPath, selectedId, visibleDocs]);
+  }, [editing, selectedFolderPath, selectedId, visibleDocs]);
 
   useEffect(() => {
     if (!editing || !selected) {
@@ -96,6 +101,7 @@ export function DocumentWorkspace({
     const session = sessions.find((item) => item.id === sessionId) ?? sessions.at(-1) ?? null;
     const nextDraft = createDraft(kind, currentMember, session, ownerMemberId, basePath);
     setDraft(nextDraft);
+    setSelectedId('');
     setEditing(true);
     setRenamingFolderPath('');
     setStatus('');
@@ -112,7 +118,7 @@ export function DocumentWorkspace({
     setStatus('저장 중입니다.');
 
     try {
-      const saved = await onSaveDocument(prepareDraftForSave(draft, data.documents));
+      const saved = await onSaveDocument(prepareDraftForSave(draft, data.documents, currentMember));
       setSelectedId(saved.id);
       setSelectedFolderPath('');
       setDraft(fromDocument(saved));
@@ -134,6 +140,21 @@ export function DocumentWorkspace({
       setStatus('삭제됐습니다.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '삭제에 실패했습니다.');
+    }
+  }
+
+  async function removeSelectedFolder() {
+    const folder = visibleFolders.find((item) => item.path === selectedFolderPath);
+    if (!folder) return;
+    setStatus('폴더를 삭제하는 중입니다.');
+
+    try {
+      await onDeleteFolder(folder);
+      setSelectedFolderPath('');
+      setParentPath(folder.parentPath ?? '');
+      setStatus('폴더를 삭제했습니다.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '폴더 삭제에 실패했습니다.');
     }
   }
 
@@ -263,6 +284,11 @@ export function DocumentWorkspace({
   }
 
   function handleTreeDragStart(event: DragEvent<HTMLElement>, item: DragTreeItem) {
+    if (item.type === 'folder' && renamingFolderPath === item.path) {
+      event.preventDefault();
+      return;
+    }
+
     setDraggedItem(item);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('application/x-luddite-tree-item', JSON.stringify(item));
@@ -423,7 +449,7 @@ export function DocumentWorkspace({
                   item.path === selectedFolderPath ? 'tree-item--active' : '',
                   dropTargetPath === item.path ? 'tree-item--drop-target' : ''
                 ].filter(Boolean).join(' ')}
-                draggable={canWrite}
+                draggable={canWrite && renamingFolderPath !== item.path}
                 key={`folder-${item.path}`}
                 role="button"
                 tabIndex={0}
@@ -460,10 +486,13 @@ export function DocumentWorkspace({
                     className="tree-rename-input"
                     value={folderNameDraft}
                     autoFocus
+                    draggable={false}
                     onBlur={() => void renameFolder(item.path, folderNameDraft)}
                     onChange={(event) => setFolderNameDraft(event.target.value)}
                     onClick={(event) => event.stopPropagation()}
                     onDoubleClick={(event) => event.stopPropagation()}
+                    onDragStart={(event) => event.preventDefault()}
+                    onPointerDown={(event) => event.stopPropagation()}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
                         event.preventDefault();
@@ -511,12 +540,11 @@ export function DocumentWorkspace({
       </aside>
 
       <div className="workspace-main">
-        <section className="reader-panel workspace-reader" aria-labelledby="reader-title">
+        <section className={editing ? 'reader-panel workspace-reader workspace-reader--writing' : 'reader-panel workspace-reader'} aria-labelledby="reader-title">
           {editing ? (
             <DocumentEditor
               canWrite={canWrite}
               currentMember={currentMember}
-              data={data}
               draft={draft}
               kind={kind}
               selectedSession={selectedSession}
@@ -528,6 +556,7 @@ export function DocumentWorkspace({
               }}
               onDraftChange={setDraft}
               onDrop={(event) => void handleDrop(event)}
+              onInsertMarkdown={insertMarkdown}
               onSave={() => void save()}
             />
           ) : selected ? (
@@ -544,6 +573,12 @@ export function DocumentWorkspace({
             <div className="empty-state">
               <h2 id="reader-title">{selectedFolderPath ? '폴더 선택됨' : '문서 없음'}</h2>
               <p>{selectedFolderPath ? '상단의 + 버튼에서 이 폴더에 문서를 만들 수 있습니다.' : '왼쪽에서 문서를 선택하거나 새 문서를 만드세요.'}</p>
+              {selectedFolderPath && canWrite ? (
+                <button className="danger-button fit-button" type="button" onClick={() => void removeSelectedFolder()}>
+                  <Trash2 size={18} aria-hidden="true" />
+                  폴더 삭제
+                </button>
+              ) : null}
               {status ? <p className="form-status">{status}</p> : null}
             </div>
           )}
@@ -593,7 +628,6 @@ function DocumentReader({
           </div>
         ) : null}
       </div>
-      {doc.summary ? <p className="doc-summary">{doc.summary}</p> : null}
       <div className="tag-row">
         {doc.tags.map((tag) => <StatusBadge key={tag} label={`#${tag}`} />)}
       </div>
@@ -606,7 +640,6 @@ function DocumentReader({
 function DocumentEditor({
   canWrite,
   currentMember,
-  data,
   draft,
   kind,
   selectedSession,
@@ -615,11 +648,11 @@ function DocumentEditor({
   onCancel,
   onDraftChange,
   onDrop,
+  onInsertMarkdown,
   onSave
 }: {
   canWrite: boolean;
   currentMember: StudyMember | null;
-  data: StudyData;
   draft: DocumentDraft;
   kind: DocumentKind;
   selectedSession: StudySession | null;
@@ -628,69 +661,76 @@ function DocumentEditor({
   onCancel: () => void;
   onDraftChange: (draft: DocumentDraft) => void;
   onDrop: (event: DragEvent<HTMLTextAreaElement>) => void;
+  onInsertMarkdown: (snippet: string) => void;
   onSave: () => void;
 }) {
   return (
-    <div className="editor-panel inline-editor">
-      <div className="split-line">
-        <div>
+    <div className="writing-page">
+      <div className="writing-grid">
+        <section className="writing-pane writing-pane--editor" aria-labelledby="reader-title">
+          <h2 id="reader-title" className="sr-only">{kind === 'material' ? '자료 작성' : `${selectedSession?.week ?? ''}회차 발표 작성`}</h2>
           <p className="eyebrow">{draft.id ? '문서 수정' : '새 문서'}</p>
-          <h2 id="reader-title">{kind === 'material' ? '자료 작성' : `${selectedSession?.week ?? ''}회차 발표 작성`}</h2>
-        </div>
-        <div className="toolbar-actions">
-          <button className="secondary-button" type="button" onClick={onCancel}>취소</button>
-          <button className="primary-button" type="button" onClick={onSave} disabled={!canWrite}>
-            <Check size={18} aria-hidden="true" />
-            저장
-          </button>
-        </div>
+          <input
+            className="writing-title"
+            value={draft.title}
+            onChange={(event) => onDraftChange({ ...draft, title: event.target.value })}
+            aria-label="제목"
+            placeholder="제목을 입력하세요"
+          />
+          <input
+            className="writing-tags"
+            value={draft.tags.join(', ')}
+            onChange={(event) => onDraftChange({ ...draft, tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })}
+            aria-label="태그"
+            placeholder="태그를 입력하세요"
+          />
+          <div className="markdown-toolbar" aria-label="마크다운 도구">
+            <button type="button" onClick={() => onInsertMarkdown('# ')} aria-label="H1"><Heading1 size={17} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onInsertMarkdown('## ')} aria-label="H2"><Heading2 size={17} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onInsertMarkdown('**굵게**')} aria-label="굵게"><Bold size={17} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onInsertMarkdown('*기울임*')} aria-label="기울임"><Italic size={17} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onInsertMarkdown('> 인용문')} aria-label="인용"><Quote size={17} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onInsertMarkdown('- 항목')} aria-label="목록"><List size={17} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onInsertMarkdown('[링크](https://)')} aria-label="링크"><Link size={17} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onInsertMarkdown('![이미지 설명](이미지 URL)')} aria-label="이미지"><ImagePlus size={17} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onInsertMarkdown('`code`')} aria-label="코드"><Code2 size={17} aria-hidden="true" /></button>
+          </div>
+          <textarea
+            ref={textareaRef}
+            className="writing-textarea"
+            value={draft.body}
+            onChange={(event) => onDraftChange({ ...draft, body: event.target.value })}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={onDrop}
+            aria-label="Markdown"
+            placeholder="당신의 이야기를 적어보세요..."
+          />
+          <p className="helper-text">
+            <ImagePlus size={16} aria-hidden="true" />
+            저장된 문서의 Markdown 입력칸에 이미지를 드래그하면 Supabase Storage에 첨부됩니다.
+          </p>
+        </section>
+
+        <section className="writing-pane writing-pane--preview" aria-label="미리보기">
+          <div className="writing-preview-meta">
+            <span>{kind === 'material' ? '자료' : `${selectedSession?.week ?? ''}회차 발표`}</span>
+            <b>{currentMember?.displayName ?? '작성자'}</b>
+          </div>
+          <MarkdownView content={draft.body} />
+        </section>
       </div>
 
-      <div className="form-grid">
-        <label>
-          제목
-          <input value={draft.title} onChange={(event) => onDraftChange({ ...draft, title: event.target.value })} />
-        </label>
-        <label>
-          저자
-          <select value={draft.ownerMemberId ?? ''} onChange={(event) => onDraftChange({ ...draft, ownerMemberId: event.target.value || null })}>
-            {kind === 'material' ? <option value="">공유</option> : null}
-            {data.members.filter((member) => member.active).map((member) => (
-              <option key={member.id} value={member.id}>{member.displayName}</option>
-            ))}
-          </select>
-        </label>
+      <div className="writing-bottom-bar">
+        <button className="secondary-button" type="button" onClick={onCancel}>나가기</button>
+        <div className="writing-bottom-status">
+          {status ? <span>{status}</span> : null}
+          {!currentMember ? <span className="danger-icon">활성 멤버로 연결된 계정만 저장할 수 있습니다.</span> : null}
+        </div>
+        <button className="primary-button" type="button" onClick={onSave} disabled={!canWrite || !draft.title.trim()}>
+          <Check size={18} aria-hidden="true" />
+          저장하기
+        </button>
       </div>
-
-      <label>
-        요약
-        <input value={draft.summary} onChange={(event) => onDraftChange({ ...draft, summary: event.target.value })} />
-      </label>
-      <label>
-        태그
-        <input value={draft.tags.join(', ')} onChange={(event) => onDraftChange({ ...draft, tags: event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean) })} />
-      </label>
-      <label>
-        Markdown
-        <textarea
-          ref={textareaRef}
-          value={draft.body}
-          onChange={(event) => onDraftChange({ ...draft, body: event.target.value })}
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={onDrop}
-          rows={18}
-        />
-      </label>
-      <p className="helper-text">
-        <ImagePlus size={16} aria-hidden="true" />
-        저장된 문서의 Markdown 입력칸에 이미지를 드래그하면 Supabase Storage에 첨부됩니다.
-      </p>
-      <div className="preview-panel editor-preview">
-        <h3>미리보기</h3>
-        <MarkdownView content={draft.body} />
-      </div>
-      {status ? <p className="form-status">{status}</p> : null}
-      {!currentMember ? <p className="form-status form-status--error">활성 멤버로 연결된 계정만 저장할 수 있습니다.</p> : null}
     </div>
   );
 }
@@ -767,17 +807,23 @@ function parseDraggedItem(event: DragEvent<HTMLElement>): DragTreeItem | null {
   return null;
 }
 
-function prepareDraftForSave(draft: DocumentDraft, documents: StudyDocument[]): DocumentDraft {
+function prepareDraftForSave(draft: DocumentDraft, documents: StudyDocument[], currentMember: StudyMember | null): DocumentDraft {
+  const normalizedDraft = {
+    ...draft,
+    summary: '',
+    ownerMemberId: draft.ownerMemberId ?? currentMember?.id ?? null
+  };
+
   if (draft.id) {
-    return draft;
+    return normalizedDraft;
   }
 
-  const folder = draft.path.split('/').slice(0, -1).join('/');
-  const fallback = draft.kind === 'presentation' ? 'new-presentation' : 'new-note';
-  const fileName = slugifyFileName(draft.title) || fallback;
+  const folder = normalizedDraft.path.split('/').slice(0, -1).join('/');
+  const fallback = normalizedDraft.kind === 'presentation' ? 'new-presentation' : 'new-note';
+  const fileName = slugifyFileName(normalizedDraft.title) || fallback;
   const path = uniqueDocumentPath(`${folder}/${fileName}.md`, documents);
 
-  return { ...draft, path };
+  return { ...normalizedDraft, path };
 }
 
 function uniqueDocumentPath(path: string, documents: StudyDocument[]): string {

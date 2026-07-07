@@ -1,5 +1,5 @@
 import { BookOpen, CalendarDays, ClipboardList, Presentation, Users } from 'lucide-react';
-import type { RouteKey, StudyData, StudyMember, StudySession } from '../types';
+import type { RouteKey, StudyData, StudyMember, StudyProject, StudySession } from '../types';
 import { formatDate, formatDateRange, formatTimeRange } from '../utils/dates';
 import { StatusBadge } from './StatusBadge';
 
@@ -10,11 +10,16 @@ type DashboardProps = {
 
 export function Dashboard({ data, onNavigate }: DashboardProps) {
   const currentSession = getCurrentSession(data.sessions);
+  const currentProject = data.projects.find((project) => project.status === 'current') ??
+    data.projects.find((project) => project.id === currentSession.projectId) ??
+    data.projects[0] ??
+    null;
+  const projectSessions = currentProject ? data.sessions.filter((session) => session.projectId === currentProject.id) : [];
+  const projectProgressValue = currentProject ? projectProgress(currentProject, projectSessions) : null;
   const activeMembers = data.members.filter((member) => member.active);
   const presenters = currentSession.presenterMemberIds
     .map((id) => findMember(data.members, id)?.displayName)
     .filter(Boolean);
-  const progressPercent = Math.min(100, Math.round((currentSession.progressCurrent / currentSession.progressTarget) * 100));
 
   return (
     <div className="dashboard">
@@ -48,8 +53,8 @@ export function Dashboard({ data, onNavigate }: DashboardProps) {
 
       <section className="session-facts" aria-label="핵심 상태">
         <div>
-          <span>회차</span>
-          <strong>{currentSession.week}회차</strong>
+          <span>프로젝트</span>
+          <strong>{currentProject?.title ?? '미지정'}</strong>
         </div>
         <div>
           <span>범위</span>
@@ -103,23 +108,35 @@ export function Dashboard({ data, onNavigate }: DashboardProps) {
         </section>
       </div>
 
-      <section className="panel wide-panel" aria-labelledby="progress-title">
+      <section className="panel wide-panel project-dashboard-panel" aria-labelledby="progress-title">
         <div className="section-heading">
           <Users size={18} aria-hidden="true" />
-          <h2 id="progress-title">회차 진도</h2>
+          <h2 id="progress-title">프로젝트 진도</h2>
         </div>
-        <div className="status-row">
-          <span>{currentSession.progressLabel}</span>
-          <strong>{currentSession.progressCurrent}/{currentSession.progressTarget} {currentSession.progressUnit}</strong>
-        </div>
-        <div className="progress-track" role="progressbar" aria-label={`${currentSession.progressLabel} ${progressPercent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent}>
-          <span style={{ width: `${progressPercent}%` }} />
-        </div>
-        <div className="tag-row">
-          {data.sessions.map((session) => (
-            <StatusBadge key={session.id} label={`${session.week}회차 ${statusLabel(session.status)}`} tone={session.status === 'current' ? 'current' : session.status === 'done' ? 'done' : undefined} />
-          ))}
-        </div>
+        {currentProject && projectProgressValue ? (
+          <>
+            <div className="project-dashboard-summary">
+              {currentProject.imageUrl ? <img src={currentProject.imageUrl} alt="" /> : null}
+              <div>
+                <div className="status-row">
+                  <span>{projectTypeLabel(currentProject)}</span>
+                  <strong>{projectProgressValue.label}</strong>
+                </div>
+                <p>{currentProject.goal}</p>
+                <div className="progress-track" role="progressbar" aria-label={`프로젝트 진도 ${projectProgressValue.percent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={projectProgressValue.percent}>
+                  <span style={{ width: `${projectProgressValue.percent}%` }} />
+                </div>
+              </div>
+            </div>
+            <div className="tag-row">
+              {projectSessions.map((session) => (
+                <StatusBadge key={session.id} label={`${session.week}회차 ${sessionProjectProgressLabel(currentProject, session.projectProgress)}`} tone={session.status === 'current' ? 'current' : session.status === 'done' ? 'done' : undefined} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="empty-state">진행 중인 프로젝트가 없습니다.</p>
+        )}
       </section>
     </div>
   );
@@ -139,9 +156,20 @@ function findMember(members: StudyMember[], memberId?: string | null): StudyMemb
   return members.find((member) => member.id === memberId);
 }
 
-function statusLabel(status: StudySession['status']): string {
-  if (status === 'current') return '진행 중';
-  if (status === 'done') return '종료';
-  if (status === 'upcoming') return '예정';
-  return '계획';
+function projectProgress(project: StudyProject, sessions: StudySession[]) {
+  const current = sessions.reduce((sum, session) => sum + session.projectProgress, 0);
+  const target = project.type === 'book' ? project.totalPages : 100;
+  const safeTarget = Math.max(1, target);
+  const percent = Math.min(100, Math.round((current / safeTarget) * 100));
+  const label = project.type === 'book' ? `${Math.min(current, safeTarget)}/${safeTarget}p` : `${Math.min(current, 100)}%`;
+
+  return { percent, label };
+}
+
+function projectTypeLabel(project: StudyProject): string {
+  return project.type === 'book' ? `책 · ${project.title}` : `자율 · ${project.title}`;
+}
+
+function sessionProjectProgressLabel(project: StudyProject, value: number): string {
+  return project.type === 'book' ? `${value}p` : `${value}%`;
 }

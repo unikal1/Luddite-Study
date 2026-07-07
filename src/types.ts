@@ -1,6 +1,8 @@
-export type RouteKey = 'dashboard' | 'materials' | 'presentations' | 'operations';
+export type RouteKey = 'dashboard' | 'projects' | 'materials' | 'presentations' | 'operations';
 
 export type MemberRole = 'owner' | 'admin' | 'facilitator' | 'member';
+export type ProjectStatus = 'planned' | 'current' | 'done';
+export type ProjectType = 'book' | 'free';
 export type SessionStatus = 'planned' | 'upcoming' | 'current' | 'done';
 export type DocumentKind = 'material' | 'presentation';
 export type ProgressStatus = 'planned' | 'active' | 'done';
@@ -23,8 +25,24 @@ export type StudyMember = {
   updatedAt: string;
 };
 
+export type StudyProject = {
+  id: number;
+  title: string;
+  type: ProjectType;
+  status: ProjectStatus;
+  totalPages: number;
+  imageUrl: string;
+  goal: string;
+  startsOn: string;
+  endsOn: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StudySession = {
   id: number;
+  projectId: number | null;
   title: string;
   week: number;
   status: SessionStatus;
@@ -43,6 +61,7 @@ export type StudySession = {
   progressCurrent: number;
   progressTarget: number;
   progressUnit: string;
+  projectProgress: number;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -130,6 +149,7 @@ export type Attachment = {
 };
 
 export type StudyData = {
+  projects: StudyProject[];
   members: StudyMember[];
   sessions: StudySession[];
   folders: DocumentFolder[];
@@ -168,6 +188,18 @@ export type FolderUpdateDraft = FolderDraft & {
   previousPath: string;
 };
 
+export type ProjectDraft = {
+  id?: number;
+  title: string;
+  type: ProjectType;
+  status: ProjectStatus;
+  totalPages: number;
+  imageUrl: string;
+  goal: string;
+  startsOn: string;
+  endsOn: string | null;
+};
+
 export type MemberDraft = {
   memberUid: string;
   displayName: string;
@@ -178,8 +210,15 @@ export type MemberDraft = {
   color: string;
 };
 
+export type MemberUpdateDraft = {
+  id: string;
+  displayName: string;
+  role: MemberRole;
+};
+
 export type SessionDraft = {
   id?: number;
+  projectId: number | null;
   title: string;
   week: number;
   status: SessionStatus;
@@ -192,6 +231,7 @@ export type SessionDraft = {
   goal: string;
   facilitatorMemberId: string | null;
   agenda: string[];
+  projectProgress: number;
 };
 
 export type MarkdownFrontmatter = {

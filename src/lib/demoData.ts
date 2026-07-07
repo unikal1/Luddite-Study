@@ -53,12 +53,29 @@ export function createDemoData(): StudyData {
   };
 
   return {
+    projects: [
+      {
+        id: 1,
+        title: '웹 성능 최적화 가이드',
+        type: 'book',
+        status: 'current',
+        totalPages: 520,
+        imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80',
+        goal: '브라우저 렌더링과 프론트엔드 성능 병목을 회차별로 정리한다.',
+        startsOn: '2026-06-15',
+        endsOn: null,
+        createdBy: alice.id,
+        createdAt: now,
+        updatedAt: now
+      }
+    ],
     members: [alice, bob, chris],
     currentMember: alice,
     bootstrapOpen: false,
     sessions: [
       {
         id: 1,
+        projectId: 1,
         title: '운영 방식과 React 렌더링',
         week: 1,
         status: 'done',
@@ -77,12 +94,14 @@ export function createDemoData(): StudyData {
         progressCurrent: 4,
         progressTarget: 4,
         progressUnit: '챕터',
+        projectProgress: 110,
         createdBy: alice.id,
         createdAt: now,
         updatedAt: now
       },
       {
         id: 2,
+        projectId: 1,
         title: 'TypeScript 모델링',
         week: 2,
         status: 'done',
@@ -101,12 +120,14 @@ export function createDemoData(): StudyData {
         progressCurrent: 5,
         progressTarget: 5,
         progressUnit: '챕터',
+        projectProgress: 150,
         createdBy: alice.id,
         createdAt: now,
         updatedAt: now
       },
       {
         id: 3,
+        projectId: 1,
         title: '브라우저 디버깅과 성능',
         week: 3,
         status: 'current',
@@ -125,6 +146,7 @@ export function createDemoData(): StudyData {
         progressCurrent: 0,
         progressTarget: 3,
         progressUnit: '실습',
+        projectProgress: 60,
         createdBy: bob.id,
         createdAt: now,
         updatedAt: now
